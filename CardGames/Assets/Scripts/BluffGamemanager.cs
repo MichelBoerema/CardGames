@@ -74,7 +74,6 @@ public class BluffGamemanager : NetworkBehaviour
     }
     private void StartGameServer()
     {
-        //Debug.Log("starting game server");
         deck = GenerateDeck();
         ShuffleDeck(deck);
         DealCards();
@@ -142,7 +141,6 @@ public class BluffGamemanager : NetworkBehaviour
             return;
         }
 
-        Debug.Log($"IsServer={IsServer} | IsClient={IsClient}");
         Debug.Log($"[SERVER] Player {senderClientId} played {cards.Length} cards");
 
         laatsteGespeeldeKaarten.Clear();
@@ -178,14 +176,15 @@ public class BluffGamemanager : NetworkBehaviour
         if (isBluff)
         {
             Debug.Log("BLUFF CALLED! Player was lying.");
+            ResetGameState();
             // later: straf voor speler die loog
         }
         else
         {
             Debug.Log("NO BLUFF! Cards were honest.");
+            ResetGameState();
             // later: straf voor caller
         }
-        RequestEndTurnServerRpc();
     }
     [ServerRpc(RequireOwnership = false)]
     public void CallBluffServerRpc(ServerRpcParams rpcParams = default)
@@ -265,4 +264,20 @@ public class BluffGamemanager : NetworkBehaviour
             deck[randomIndex] = temp;
         }
     }
+
+    void ResetGameState()
+    {
+        if (!IsServer) return;
+
+        laatsteGespeeldeKaarten.Clear();
+        deck?.Clear();
+        currentPlayerIndex = 0;
+
+        foreach (Player player in players)
+        {
+            player.ClearHand();
+        }
+        StartGameServer();
+    }
+
 }

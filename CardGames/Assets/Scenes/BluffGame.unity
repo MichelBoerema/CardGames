@@ -1072,8 +1072,8 @@ MonoBehaviour:
   m_OnClick:
     m_PersistentCalls:
       m_Calls:
-      - m_Target: {fileID: 0}
-        m_TargetAssemblyTypeName: BluffGamemanager, Assembly-CSharp
+      - m_Target: {fileID: 536166284}
+        m_TargetAssemblyTypeName: UIManager, Assembly-CSharp
         m_MethodName: CallBluff
         m_Mode: 1
         m_Arguments:

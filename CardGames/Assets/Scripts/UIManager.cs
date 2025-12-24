@@ -84,6 +84,10 @@ public class UIManager : MonoBehaviour
 
         BluffGamemanager.Instance.PlayCardsServerRpc(playedValues.ToArray());
     }
+    public void CallBluff()
+    {
+        BluffGamemanager.Instance.CallBluffServerRpc();
+    }
 
     public void SetLocalPlayer(Player player)
     {
@@ -124,4 +128,15 @@ public class UIManager : MonoBehaviour
         }
         selectedCards.Clear();
     }
+
+    public void ClearHandUI()
+    {
+        foreach (Transform child in handUIParent)
+        {
+            Destroy(child.gameObject);
+        }
+
+        ClearSelection();
+    }
+
 }

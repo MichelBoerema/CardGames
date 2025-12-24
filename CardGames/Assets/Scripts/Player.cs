@@ -11,19 +11,11 @@ public class Player : NetworkBehaviour
     public override void OnNetworkSpawn()
     {
         Debug.Log($"Player spawned | Server={IsServer} | Owner={IsOwner}");
-        if (IsOwner)
-        {
-            //UIManager.Instance.SetLocalPlayer(this);
-            Debug.Log("Local player UI registered");
-        }
     }
 
     public void SetTurn(bool isMyTurn)
     {
         IsMyTurn = isMyTurn;
-
-        Debug.Log($"SetTurn | Player={OwnerClientId} | IsOwner={IsOwner} | MyTurn={isMyTurn}");
-
 
         if (IsOwner && UIManager.Instance != null)
         {
@@ -48,4 +40,23 @@ public class Player : NetworkBehaviour
             UIManager.Instance.AddCardToHand(card);
         }
     }
+
+    public void ClearHand()
+    {
+        if (!IsServer) return;
+
+        ClearHandClientRpc();
+    }
+
+    [ClientRpc]
+    void ClearHandClientRpc()
+    {
+        hand.Clear();
+
+        if (IsOwner && UIManager.Instance != null)
+        {
+            UIManager.Instance.ClearHandUI();
+        }
+    }
+
 }
