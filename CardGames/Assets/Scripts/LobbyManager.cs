@@ -61,32 +61,33 @@ public class LobbyManager : MonoBehaviour
     public void StartHost()
     {
         var transport = NetworkManager.Singleton.GetComponent<Unity.Netcode.Transports.UTP.UnityTransport>();
-        transport.ConnectionData.Port = (ushort)Random.Range(10000, 60000);
+        transport.ConnectionData.Port = 7777;
         NetworkManager.Singleton.StartHost();
     }
 
     public void JoinGame()
     {
-        string ip = joinIPField.text;
-
         var transport = NetworkManager.Singleton.GetComponent<Unity.Netcode.Transports.UTP.UnityTransport>();
-        transport.ConnectionData.Address = /*ip*/"127.0.0.1";
-        transport.ConnectionData.Port = 7777;
 
-        if (!NetworkManager.Singleton.IsServer)
+        transport.ConnectionData.Address = "127.0.0.1"; // localhost
+        transport.ConnectionData.Port = 7777; // MUST match host port
+
+        if (NetworkManager.Singleton.IsClient || NetworkManager.Singleton.IsServer)
         {
-            Debug.LogWarning("Host not ready yet!");
+            Debug.LogWarning("Already connected or hosting");
             return;
         }
+
         NetworkManager.Singleton.StartClient();
     }
+
 
     public void StartGame()
     {
         if (NetworkManager.Singleton.IsServer)
         {
             // Switch to Game Scene for all clients
-            NetworkManager.Singleton.SceneManager.LoadScene("GameScene", UnityEngine.SceneManagement.LoadSceneMode.Single);
+            NetworkManager.Singleton.SceneManager.LoadScene("BluffGame", UnityEngine.SceneManagement.LoadSceneMode.Single);
         }
     }
 }

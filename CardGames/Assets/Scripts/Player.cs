@@ -10,24 +10,36 @@ public class Player : NetworkBehaviour
 
     public override void OnNetworkSpawn()
     {
+        Debug.Log($"Player spawned | Server={IsServer} | Owner={IsOwner}");
         if (IsOwner)
-            Debug.Log("Local player spawned for client: " + OwnerClientId);
-        else
-            Debug.Log("Remote player spawned for client: " + OwnerClientId);
+        {
+            //UIManager.Instance.SetLocalPlayer(this);
+            Debug.Log("Local player UI registered");
+        }
     }
-
 
     public void SetTurn(bool isMyTurn)
     {
         IsMyTurn = isMyTurn;
 
-        if (IsOwner)
+        Debug.Log($"SetTurn | Player={OwnerClientId} | IsOwner={IsOwner} | MyTurn={isMyTurn}");
+
+
+        if (IsOwner && UIManager.Instance != null)
         {
             UIManager.Instance.SetPlayerTurn(isMyTurn);
         }
     }
 
     public void AddCard(CardValue card)
+    {
+        if (!IsServer) return;
+
+        ReceiveCardClientRpc(card);
+    }
+
+    [ClientRpc]
+    void ReceiveCardClientRpc(CardValue card)
     {
         hand.Add(card);
 

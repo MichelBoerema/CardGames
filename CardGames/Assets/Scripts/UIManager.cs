@@ -8,10 +8,6 @@ public class UIManager : MonoBehaviour
 {
     public static UIManager Instance;
 
-    [Header("Connecting")]
-    [SerializeField] private Button hostButton;
-    [SerializeField] private Button clientButton;
-
     [Header("Hand UI")]
     public Transform handUIParent;
     public GameObject cardButtonPrefab;
@@ -33,18 +29,6 @@ public class UIManager : MonoBehaviour
             Instance = this;
         else
             Destroy(gameObject);
-
-        hostButton.onClick.AddListener(HostButtonOnClick);
-        clientButton.onClick.AddListener(ClientButtonOnClick);
-    }
-
-    void HostButtonOnClick()
-    {
-        NetworkManager.Singleton.StartHost();
-    }
-    void ClientButtonOnClick()
-    {
-        NetworkManager.Singleton.StartClient();
     }
 
     public void AddCardToHand(CardValue cardValue)
@@ -81,8 +65,6 @@ public class UIManager : MonoBehaviour
         {
             selectedCards.Remove(card);
         }
-
-        Debug.Log("Selected cards: " + selectedCards.Count);
     }
 
     public void PlaySelectedCards()
@@ -95,12 +77,12 @@ public class UIManager : MonoBehaviour
         foreach (Card card in selectedCards)
         {
             playedValues.Add(card.cardValue);
-            Destroy(card.gameObject); // UI verwijderen
+            Destroy(card.gameObject);
         }
 
         selectedCards.Clear();
 
-        BluffGamemanager.Instance.PlayCards(playedValues);
+        BluffGamemanager.Instance.PlayCardsServerRpc(playedValues.ToArray());
     }
 
     public void SetLocalPlayer(Player player)

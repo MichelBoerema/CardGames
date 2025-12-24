@@ -1,5 +1,7 @@
 using System.Collections.Generic;
+using Unity.Netcode;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 using static UnityEditor.Experimental.GraphView.GraphView;
 
 public enum CardValue
@@ -19,7 +21,7 @@ public enum TableRank
 
 
 
-public class BluffGamemanager : MonoBehaviour
+public class BluffGamemanager : NetworkBehaviour
 {
     public List<Player> players = new List<Player>();
 
@@ -30,28 +32,55 @@ public class BluffGamemanager : MonoBehaviour
     [Header("Game State")]
     public TableRank currentTableRank;
     public List<CardValue> laatsteGespeeldeKaarten = new List<CardValue>();
-    private int currentPlayerIndex = 0;
+    [SerializeField] private int currentPlayerIndex = 0;
 
-
-    void Awake()
+    private void Start()
     {
         if (Instance == null)
             Instance = this;
-        else
-            Destroy(gameObject);
+    }
+    public override void OnNetworkSpawn()
+    {
+        if (!IsServer) return;
+
+        players.Clear();
+        currentPlayerIndex = 0;
+
+        // Find all Player objects that came from lobby
+        foreach (var player in FindObjectsOfType<Player>())
+        {
+            RegisterPlayer(player);
+        }
+
+        Debug.Log($"Registered {players.Count} players in GameScene");
+
+        NetworkManager.SceneManager.OnLoadEventCompleted += OnSceneLoaded;
+    }
+    private void OnSceneLoaded(
+    string sceneName,
+    LoadSceneMode loadSceneMode,
+    List<ulong> clientsCompleted,
+    List<ulong> clientsTimedOut)
+    {
+        if (sceneName != "BluffGame")
+            return;
+
+        StartGameServer();
     }
 
-    void Start()
+    public void RegisterPlayer(Player player)
     {
-        // Alle spelers in de scene automatisch vinden
-        players.AddRange(FindObjectsOfType<Player>());
-
-        deck = GenerateDeck(players.Count);
+        players.Add(player);
+    }
+    private void StartGameServer()
+    {
+        //Debug.Log("starting game server");
+        deck = GenerateDeck();
         ShuffleDeck(deck);
         DealCards();
         ChooseRandomTableRank();
+        currentPlayerIndex = 0;
         StartTurn();
-
     }
 
     void StartTurn()
@@ -64,8 +93,17 @@ public class BluffGamemanager : MonoBehaviour
         Debug.Log($"Turn started for player {currentPlayerIndex}");
     }
 
-    public void EndTurn()
+    [ServerRpc(RequireOwnership = false)]
+    public void RequestEndTurnServerRpc()
     {
+        EndTurnServer();
+    }
+
+
+    void EndTurnServer()
+    {
+        if (!IsServer) return;
+
         currentPlayerIndex++;
 
         if (currentPlayerIndex >= players.Count)
@@ -80,27 +118,40 @@ public class BluffGamemanager : MonoBehaviour
         TableRank[] ranks = { TableRank.King, TableRank.Queen, TableRank.Ace };
         currentTableRank = ranks[Random.Range(0, ranks.Length)];
 
-        Debug.Log("Current Table Rank: " + currentTableRank);
-
         UIManager.Instance.UpdateTableRank(currentTableRank);
     }
 
 
     public void PlayCards(List<CardValue> cards)
     {
+        if (!IsOwner) return;
+
+        PlayCardsServerRpc(cards.ToArray());
+    }
+
+    [ServerRpc(RequireOwnership = false)]
+    public void PlayCardsServerRpc(CardValue[] cards, ServerRpcParams rpcParams = default)
+    {
+        ulong senderClientId = rpcParams.Receive.SenderClientId;
+
+        Player player = players[currentPlayerIndex];
+
+        if (player.OwnerClientId != senderClientId)
+        {
+            Debug.LogWarning("Player tried to play out of turn!");
+            return;
+        }
+
+        Debug.Log($"IsServer={IsServer} | IsClient={IsClient}");
+        Debug.Log($"[SERVER] Player {senderClientId} played {cards.Length} cards");
+
         laatsteGespeeldeKaarten.Clear();
         laatsteGespeeldeKaarten.AddRange(cards);
 
-        Debug.Log("Laatst gespeelde kaarten:");
-        foreach (var card in laatsteGespeeldeKaarten)
-        {
-            Debug.Log(card);
-        }
-
-        EndTurn();
+        EndTurnServer();
     }
 
-    public void CallBluff()
+    public void ResolveBluff()
     {
         if (laatsteGespeeldeKaarten.Count == 0)
         {
@@ -134,8 +185,20 @@ public class BluffGamemanager : MonoBehaviour
             Debug.Log("NO BLUFF! Cards were honest.");
             // later: straf voor caller
         }
-        EndTurn();
+        RequestEndTurnServerRpc();
     }
+    [ServerRpc(RequireOwnership = false)]
+    public void CallBluffServerRpc(ServerRpcParams rpcParams = default)
+    {
+        ulong sender = rpcParams.Receive.SenderClientId;
+
+        if (players[currentPlayerIndex].OwnerClientId != sender)
+            return;
+
+        ResolveBluff();
+        EndTurnServer();
+    }
+
 
     bool DoesCardMatchTableRank(CardValue card)
     {
@@ -154,33 +217,30 @@ public class BluffGamemanager : MonoBehaviour
 
     void DealCards()
     {
-        int currentPlayerIndex = 0;
+        const int CARDS_PER_PLAYER = 5;
 
-        while (deck.Count > 0)
+        for (int round = 0; round < CARDS_PER_PLAYER; round++)
         {
-            CardValue card = deck[0];
-            deck.RemoveAt(0);
-
-            players[currentPlayerIndex].AddCard(card);
-
-            currentPlayerIndex++;
-            if (currentPlayerIndex >= players.Count)
+            for (int i = 0; i < players.Count; i++)
             {
-                currentPlayerIndex = 0;
-            }
-        }
+                if (deck.Count == 0)
+                {
+                    Debug.LogWarning("Deck ran out of cards early!");
+                    return;
+                }
 
-        // Debug: check handen
-        foreach (Player player in players)
-        {
-            Debug.Log($"Player {player.name} has {player.hand.Count} cards");
+                CardValue card = deck[0];
+                deck.RemoveAt(0);
+
+                players[i].AddCard(card);
+            }
         }
     }
 
-    List<CardValue> GenerateDeck(int players)
+    List<CardValue> GenerateDeck()
     {
         List<CardValue> newDeck = new List<CardValue>();
-        int cardsPerType = players + 2;
+        int cardsPerType = 6;
 
         for (int i = 0; i < cardsPerType; i++)
         {
