@@ -34,11 +34,6 @@ public class BluffGamemanager : NetworkBehaviour
     public List<CardValue> laatsteGespeeldeKaarten = new List<CardValue>();
     [SerializeField] private int currentPlayerIndex = 0;
 
-    [Header("Russian Roulette Settings")]
-    [SerializeField] private int startingPoints = 3;
-    [SerializeField] private int minSafeShots = 1;
-    [SerializeField] private int maxSafeShots = 6;
-
     [Header("Bluff Tracking")]
     private int lastPlayedPlayerIndex = -1;
     private int bluffCallerIndex = -1;
@@ -136,9 +131,17 @@ public class BluffGamemanager : NetworkBehaviour
         TableRank[] ranks = { TableRank.King, TableRank.Queen, TableRank.Ace };
         currentTableRank = ranks[Random.Range(0, ranks.Length)];
 
-        UIManager.Instance.UpdateTableRank(currentTableRank);
+        UpdateTableRankClientRpc(currentTableRank);
     }
 
+    [ClientRpc]
+    void UpdateTableRankClientRpc(TableRank rank)
+    {
+        if (UIManager.Instance != null)
+        {
+            UIManager.Instance.UpdateTableRank(rank);
+        }
+    }
 
     public void PlayCards(List<CardValue> cards)
     {
@@ -167,8 +170,20 @@ public class BluffGamemanager : NetworkBehaviour
         laatsteGespeeldeKaarten.Clear();
         laatsteGespeeldeKaarten.AddRange(cards);
 
+        UpdateLastClaimsClientRpc(laatsteGespeeldeKaarten.Count, currentTableRank);
+
         EndTurnServer();
     }
+
+    [ClientRpc]
+    void UpdateLastClaimsClientRpc(int amountClaimed, TableRank rank)
+    {
+        if (UIManager.Instance != null)
+        {
+            UIManager.Instance.UpdateLastClaims(amountClaimed, rank);
+        }
+    }
+
 
     public void ResolveBluff()
     {

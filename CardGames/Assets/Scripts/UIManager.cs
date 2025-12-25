@@ -12,8 +12,9 @@ public class UIManager : MonoBehaviour
     public Transform handUIParent;
     public GameObject cardButtonPrefab;
 
-    [Header("Table Rank UI")]
+    [Header("Game UI")]
     public Text tableRankText;
+    public Text lastClaims;
 
     [Header("Points UI")]
     public Text pointsText;
@@ -146,5 +147,10 @@ public class UIManager : MonoBehaviour
     public void UpdatePointsUI(int newPoints, int maxPoints)
     {
         pointsText.text = $"{newPoints}/{maxPoints}";
+    }
+
+    public void UpdateLastClaims(int amountClaimed, TableRank currentTableRank)
+    {
+        lastClaims.text = $"last player claimed {amountClaimed}X {currentTableRank}";
     }
 }

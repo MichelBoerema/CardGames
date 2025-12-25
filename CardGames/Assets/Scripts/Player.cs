@@ -23,8 +23,6 @@ public class Player : NetworkBehaviour
     {
         IsMyTurn = isMyTurn;
 
-        Debug.Log($"SetTurn | Player={OwnerClientId} | IsOwner={IsOwner} | MyTurn={isMyTurn}");
-
         if (IsOwner && UIManager.Instance != null)
         {
             UIManager.Instance.SetPlayerTurn(isMyTurn);
@@ -92,9 +90,7 @@ public class Player : NetworkBehaviour
 
         if (shotsUntilDeath <= 0)
         {
-            //TakeDamage(1);
             OnPlayerDied(); 
-            Debug.Log($"New chamber rolled: {shotsUntilDeath} safe shots");
         }
     }
 
