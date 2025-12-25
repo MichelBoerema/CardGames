@@ -15,6 +15,10 @@ public class UIManager : MonoBehaviour
     [Header("Table Rank UI")]
     public Text tableRankText;
 
+    [Header("Points UI")]
+    public Text pointsText;
+
+
     private List<Card> selectedCards = new List<Card>();
 
     public Button playCardsButton;
@@ -139,4 +143,8 @@ public class UIManager : MonoBehaviour
         ClearSelection();
     }
 
+    public void UpdatePointsUI(int newPoints, int maxPoints)
+    {
+        pointsText.text = $"{newPoints}/{maxPoints}";
+    }
 }

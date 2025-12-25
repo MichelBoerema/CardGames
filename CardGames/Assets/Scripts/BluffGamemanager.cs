@@ -34,6 +34,16 @@ public class BluffGamemanager : NetworkBehaviour
     public List<CardValue> laatsteGespeeldeKaarten = new List<CardValue>();
     [SerializeField] private int currentPlayerIndex = 0;
 
+    [Header("Russian Roulette Settings")]
+    [SerializeField] private int startingPoints = 3;
+    [SerializeField] private int minSafeShots = 1;
+    [SerializeField] private int maxSafeShots = 6;
+
+    [Header("Bluff Tracking")]
+    private int lastPlayedPlayerIndex = -1;
+    private int bluffCallerIndex = -1;
+
+
     private void Start()
     {
         if (Instance == null)
@@ -66,6 +76,11 @@ public class BluffGamemanager : NetworkBehaviour
             return;
 
         StartGameServer();
+
+        foreach (Player player in players)
+        {
+            player.InitializeRoulette();
+        }
     }
 
     public void RegisterPlayer(Player player)
@@ -84,13 +99,17 @@ public class BluffGamemanager : NetworkBehaviour
 
     void StartTurn()
     {
+        if (!IsServer) return;
+
         for (int i = 0; i < players.Count; i++)
         {
-            players[i].SetTurn(i == currentPlayerIndex);
+            bool isTurn = (i == currentPlayerIndex);
+            players[i].SetTurnClientRpc(isTurn);
         }
 
-        Debug.Log($"Turn started for player {currentPlayerIndex}");
+        Debug.Log($"Turn started for player index {currentPlayerIndex}");
     }
+
 
     [ServerRpc(RequireOwnership = false)]
     public void RequestEndTurnServerRpc()
@@ -141,6 +160,8 @@ public class BluffGamemanager : NetworkBehaviour
             return;
         }
 
+        lastPlayedPlayerIndex = currentPlayerIndex;
+
         Debug.Log($"[SERVER] Player {senderClientId} played {cards.Length} cards");
 
         laatsteGespeeldeKaarten.Clear();
@@ -173,19 +194,36 @@ public class BluffGamemanager : NetworkBehaviour
             }
         }
 
+        int punishedPlayerIndex;
+
         if (isBluff)
         {
             Debug.Log("BLUFF CALLED! Player was lying.");
-            ResetGameState();
-            // later: straf voor speler die loog
+            punishedPlayerIndex = lastPlayedPlayerIndex;
         }
         else
         {
-            Debug.Log("NO BLUFF! Cards were honest.");
-            ResetGameState();
-            // later: straf voor caller
+            Debug.Log("NO BLUFF! Caller was wrong.");
+            punishedPlayerIndex = bluffCallerIndex;
         }
+
+        ApplyRoulettePunishment(punishedPlayerIndex);
+        ResetGameState();
     }
+
+    void ApplyRoulettePunishment(int playerIndex)
+    {
+        if (playerIndex < 0 || playerIndex >= players.Count)
+            return;
+
+        Player punishedPlayer = players[playerIndex];
+
+        Debug.Log($"Player {punishedPlayer.OwnerClientId} pulls the trigger");
+
+        punishedPlayer.PullTrigger();
+    }
+
+
     [ServerRpc(RequireOwnership = false)]
     public void CallBluffServerRpc(ServerRpcParams rpcParams = default)
     {
@@ -193,6 +231,8 @@ public class BluffGamemanager : NetworkBehaviour
 
         if (players[currentPlayerIndex].OwnerClientId != sender)
             return;
+
+        bluffCallerIndex = currentPlayerIndex;
 
         ResolveBluff();
         EndTurnServer();
@@ -271,7 +311,7 @@ public class BluffGamemanager : NetworkBehaviour
 
         laatsteGespeeldeKaarten.Clear();
         deck?.Clear();
-        currentPlayerIndex = 0;
+        //currentPlayerIndex = 0;
 
         foreach (Player player in players)
         {
