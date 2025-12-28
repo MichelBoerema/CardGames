@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using Unity.Collections;
 using Unity.Netcode;
 using UnityEngine;
 
@@ -7,7 +8,15 @@ public class Player : NetworkBehaviour
     public List<CardValue> hand = new List<CardValue>();
 
     public bool IsMyTurn { get; private set; }
+    public bool IsAlive { get; set; } = true;
 
+
+    public NetworkVariable<FixedString32Bytes> PlayerName =
+    new NetworkVariable<FixedString32Bytes>(
+        "Player",
+        NetworkVariableReadPermission.Everyone,
+        NetworkVariableWritePermission.Server
+    );
 
     [Header("Punishment")]
     public int points;
@@ -16,6 +25,10 @@ public class Player : NetworkBehaviour
     public override void OnNetworkSpawn()
     {
         Debug.Log($"Player spawned | Server={IsServer} | Owner={IsOwner}");
+        if (IsOwner)
+        {
+            SendNameToServer();
+        }
     }
 
     [ClientRpc]
@@ -29,6 +42,18 @@ public class Player : NetworkBehaviour
         }
     }
 
+    void SendNameToServer()
+    {
+        string savedName = PlayerPrefs.GetString("PlayerName", "Player");
+        SetPlayerNameServerRpc(savedName);
+    }
+
+    [ServerRpc(RequireOwnership = false)]
+    void SetPlayerNameServerRpc(string name, ServerRpcParams rpcParams = default)
+    {
+        PlayerName.Value = name;
+        Debug.Log($"Server set name for client {rpcParams.Receive.SenderClientId}: {name}");
+    }
 
     public void AddCard(CardValue card)
     {
@@ -96,8 +121,13 @@ public class Player : NetworkBehaviour
 
     void OnPlayerDied()
     {
-        Debug.Log($"Player {OwnerClientId} has died!");
-        // later: eliminate from turns, spectate mode, etc.
+        if (!IsServer) return;
+
+        IsAlive = false;
+
+        Debug.Log($"Player {PlayerName.Value} has died!");
+
+        BluffGamemanager.Instance.OnPlayerDied(this);
     }
 
     [ClientRpc]

@@ -17,6 +17,9 @@ public class LobbyManager : MonoBehaviour
 
     private List<ulong> connectedPlayers = new List<ulong>();
 
+    [Header("Name")]
+    public InputField nameInputField;
+
     void Awake()
     {
         if (Instance == null) Instance = this;
@@ -29,6 +32,9 @@ public class LobbyManager : MonoBehaviour
         joinButton.onClick.AddListener(JoinGame);
         startGameButton.onClick.AddListener(StartGame);
         startGameButton.interactable = false;
+
+        string savedName = PlayerPrefs.GetString("PlayerName", "");
+        nameInputField.text = savedName;
 
         NetworkManager.Singleton.OnClientConnectedCallback += OnClientConnected;
         NetworkManager.Singleton.OnClientDisconnectCallback += OnClientDisconnected;
@@ -52,14 +58,18 @@ public class LobbyManager : MonoBehaviour
     void UpdatePlayerList()
     {
         playerListText.text = "Players:\n";
-        foreach (var id in connectedPlayers)
+
+        foreach (var player in FindObjectsOfType<Player>())
         {
-            playerListText.text += $"Player {id}\n";
+            string name = player.PlayerName.Value.ToString();
+            playerListText.text += $"{name}\n";
         }
     }
 
     public void StartHost()
     {
+        ChooseName();
+
         var transport = NetworkManager.Singleton.GetComponent<Unity.Netcode.Transports.UTP.UnityTransport>();
         transport.ConnectionData.Port = 7777;
         NetworkManager.Singleton.StartHost();
@@ -67,10 +77,13 @@ public class LobbyManager : MonoBehaviour
 
     public void JoinGame()
     {
-        var transport = NetworkManager.Singleton.GetComponent<Unity.Netcode.Transports.UTP.UnityTransport>();
+        ChooseName();
 
-        transport.ConnectionData.Address = "127.0.0.1"; // localhost
-        transport.ConnectionData.Port = 7777; // MUST match host port
+        var transport = NetworkManager.Singleton
+            .GetComponent<Unity.Netcode.Transports.UTP.UnityTransport>();
+
+        transport.ConnectionData.Address = joinIPField.text.Trim();
+        transport.ConnectionData.Port = 7777;
 
         if (NetworkManager.Singleton.IsClient || NetworkManager.Singleton.IsServer)
         {
@@ -81,6 +94,22 @@ public class LobbyManager : MonoBehaviour
         NetworkManager.Singleton.StartClient();
     }
 
+
+    public void ChooseName()
+    {
+        string chosenName = nameInputField.text.Trim();
+
+        if (string.IsNullOrEmpty(chosenName))
+            chosenName = $"Player {Random.Range(1000, 9999)}";
+
+        if (chosenName.Length > 16)
+            chosenName = chosenName.Substring(0, 16);
+
+        PlayerPrefs.SetString("PlayerName", chosenName);
+        PlayerPrefs.Save();
+
+        Debug.Log($"Saved player name: {chosenName}");
+    }
 
     public void StartGame()
     {

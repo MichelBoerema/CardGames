@@ -1,8 +1,8 @@
 using System.Collections.Generic;
+using Unity.Collections;
 using Unity.Netcode;
 using UnityEngine;
 using UnityEngine.SceneManagement;
-using static UnityEditor.Experimental.GraphView.GraphView;
 
 public enum CardValue
 {
@@ -98,11 +98,9 @@ public class BluffGamemanager : NetworkBehaviour
 
         for (int i = 0; i < players.Count; i++)
         {
-            bool isTurn = (i == currentPlayerIndex);
+            bool isTurn = (i == currentPlayerIndex && players[i].IsAlive);
             players[i].SetTurnClientRpc(isTurn);
         }
-
-        Debug.Log($"Turn started for player index {currentPlayerIndex}");
     }
 
 
@@ -117,14 +115,22 @@ public class BluffGamemanager : NetworkBehaviour
     {
         if (!IsServer) return;
 
-        currentPlayerIndex++;
-
-        if (currentPlayerIndex >= players.Count)
-            currentPlayerIndex = 0;
-
-        StartTurn();
+        AdvanceToNextAlivePlayer();
     }
 
+    void AdvanceToNextAlivePlayer()
+    {
+        int nextIndex = GetNextAlivePlayerIndex(currentPlayerIndex);
+
+        if (nextIndex == -1)
+        {
+            EndGame();
+            return;
+        }
+
+        currentPlayerIndex = nextIndex;
+        StartTurn();
+    }
 
     void ChooseRandomTableRank()
     {
@@ -165,22 +171,20 @@ public class BluffGamemanager : NetworkBehaviour
 
         lastPlayedPlayerIndex = currentPlayerIndex;
 
-        Debug.Log($"[SERVER] Player {senderClientId} played {cards.Length} cards");
-
         laatsteGespeeldeKaarten.Clear();
         laatsteGespeeldeKaarten.AddRange(cards);
 
-        UpdateLastClaimsClientRpc(laatsteGespeeldeKaarten.Count, currentTableRank);
+        UpdateLastClaimsClientRpc(player.PlayerName.Value, laatsteGespeeldeKaarten.Count, currentTableRank);
 
         EndTurnServer();
     }
 
     [ClientRpc]
-    void UpdateLastClaimsClientRpc(int amountClaimed, TableRank rank)
+    void UpdateLastClaimsClientRpc(FixedString32Bytes PlayerName, int amountClaimed, TableRank rank)
     {
         if (UIManager.Instance != null)
         {
-            UIManager.Instance.UpdateLastClaims(amountClaimed, rank);
+            UIManager.Instance.UpdateLastClaims(PlayerName, amountClaimed, rank);
         }
     }
 
@@ -233,7 +237,7 @@ public class BluffGamemanager : NetworkBehaviour
 
         Player punishedPlayer = players[playerIndex];
 
-        Debug.Log($"Player {punishedPlayer.OwnerClientId} pulls the trigger");
+        Debug.Log($"Player {punishedPlayer.PlayerName.Value} pulls the trigger");
 
         punishedPlayer.PullTrigger();
     }
@@ -251,6 +255,114 @@ public class BluffGamemanager : NetworkBehaviour
 
         ResolveBluff();
         EndTurnServer();
+    }
+
+    public void OnPlayerDied(Player player)
+    {
+        if (!IsServer) return;
+
+        int aliveCount = GetAlivePlayerCount();
+
+        Debug.Log($"Alive players remaining: {aliveCount}");
+
+        if (aliveCount <= 1)
+        {
+            EndGame();
+            return;
+        }
+
+        // If the dead player was the current turn holder, move on
+        if (players[currentPlayerIndex] == player)
+        {
+            AdvanceToNextAlivePlayer();
+        }
+    }
+
+    int GetAlivePlayerCount()
+    {
+        int count = 0;
+        foreach (var player in players)
+        {
+            if (player.IsAlive)
+                count++;
+        }
+        return count;
+    }
+
+    int GetNextAlivePlayerIndex(int startIndex)
+    {
+        int index = startIndex;
+
+        for (int i = 0; i < players.Count; i++)
+        {
+            index = (index + 1) % players.Count;
+
+            if (players[index].IsAlive)
+                return index;
+        }
+
+        return -1; // should never happen if >=1 alive
+    }
+
+    void EndGame()
+    {
+        Player winner = null;
+
+        foreach (var player in players)
+        {
+            if (player.IsAlive)
+            {
+                winner = player;
+                break;
+            }
+        }
+
+        Debug.Log($"GAME OVER! Winner: {winner?.PlayerName.Value}");
+
+        EndGameClientRpc(winner != null ? winner.PlayerName.Value : "Nobody");
+    }
+
+
+    [ClientRpc]
+    void EndGameClientRpc(FixedString32Bytes winnerName)
+    {
+        bool isHost = NetworkManager.Singleton.IsServer;
+
+        if (UIManager.Instance != null)
+        {
+            UIManager.Instance.ShowGameOver(winnerName, isHost);
+        }
+    }
+
+    public void RestartGameServer()
+    {
+        if (!IsServer) return;
+
+        Debug.Log("Restarting game...");
+
+        // Reset players
+        foreach (Player player in players)
+        {
+            player.IsAlive = true;
+            player.InitializeRoulette();
+            player.ClearHand();
+        }
+
+        lastPlayedPlayerIndex = -1;
+        bluffCallerIndex = -1;
+        laatsteGespeeldeKaarten.Clear();
+
+        StartGameServer();
+        HideGameOverClientRpc();
+    }
+
+    [ClientRpc]
+    void HideGameOverClientRpc()
+    {
+        if (UIManager.Instance != null)
+        {
+            UIManager.Instance.gameOverPanel.SetActive(false);
+        }
     }
 
 
@@ -277,6 +389,9 @@ public class BluffGamemanager : NetworkBehaviour
         {
             for (int i = 0; i < players.Count; i++)
             {
+                if (!players[i].IsAlive)
+                    continue;
+
                 if (deck.Count == 0)
                 {
                     Debug.LogWarning("Deck ran out of cards early!");
@@ -334,5 +449,4 @@ public class BluffGamemanager : NetworkBehaviour
         }
         StartGameServer();
     }
-
 }

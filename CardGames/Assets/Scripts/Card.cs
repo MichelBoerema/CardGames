@@ -6,23 +6,33 @@ public class Card : MonoBehaviour
     public CardValue cardValue;
     public bool IsSelected { get; private set; }
 
-    private Button button;
-    private Text buttonText;
-    private Image background;
+    [Header("UI References")]
+    [SerializeField] private Button button;
+    [SerializeField] private Text buttonText;
+    [SerializeField] private Image background;
+    [SerializeField] private Image cardArt;   // <-- NEW
+
+    [Header("Card Sprites")]
+    public Sprite kingSprite;
+    public Sprite queenSprite;
+    public Sprite aceSprite;
+    public Sprite jokerSprite;
 
     void Awake()
     {
-        button = GetComponent<Button>();
-        buttonText = GetComponentInChildren<Text>();
-        background = GetComponent<Image>();
-
         button.onClick.AddListener(ToggleSelected);
     }
 
     public void Setup(CardValue value)
     {
         cardValue = value;
+
+        // Optional: keep text for debugging
         buttonText.text = GetCardShortName(cardValue);
+
+        cardArt.sprite = GetCardSprite(cardValue);
+        cardArt.enabled = true;
+
         SetSelected(false);
     }
 
@@ -35,14 +45,27 @@ public class Card : MonoBehaviour
     public void SetInteractable(bool interactable)
     {
         button.interactable = interactable;
+        background.color = interactable ? Color.white : new Color(1f, 1f, 1f, 0.5f);
     }
 
     public void SetSelected(bool selected)
     {
         IsSelected = selected;
 
-        // simpele visual feedback
+        // visual feedback
         background.color = IsSelected ? Color.yellow : Color.white;
+    }
+
+    Sprite GetCardSprite(CardValue value)
+    {
+        switch (value)
+        {
+            case CardValue.King: return kingSprite;
+            case CardValue.Queen: return queenSprite;
+            case CardValue.Ace: return aceSprite;
+            case CardValue.Joker: return jokerSprite;
+            default: return null;
+        }
     }
 
     string GetCardShortName(CardValue value)

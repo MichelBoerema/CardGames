@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using Unity.Collections;
 using Unity.Netcode;
 using UnityEngine;
 using UnityEngine.Rendering;
@@ -19,6 +20,11 @@ public class UIManager : MonoBehaviour
     [Header("Points UI")]
     public Text pointsText;
 
+    [Header("Game Over UI")]
+    public GameObject gameOverPanel;
+    public Text winnerText;
+    public Button restartGameButton;
+    public Button endServerButton;
 
     private List<Card> selectedCards = new List<Card>();
 
@@ -149,8 +155,48 @@ public class UIManager : MonoBehaviour
         pointsText.text = $"{newPoints}/{maxPoints}";
     }
 
-    public void UpdateLastClaims(int amountClaimed, TableRank currentTableRank)
+    public void UpdateLastClaims(FixedString32Bytes PlayerName, int amountClaimed, TableRank currentTableRank)
     {
-        lastClaims.text = $"last player claimed {amountClaimed}X {currentTableRank}";
+        lastClaims.text = $"{PlayerName} claimed {amountClaimed}X {currentTableRank}";
     }
+
+    public void ShowGameOver(FixedString32Bytes winnerName, bool isHost)
+    {
+        gameOverPanel.SetActive(true);
+
+        winnerText.text = $"WINNER:\n{winnerName}";
+
+        // Only host can control the game flow
+        restartGameButton.gameObject.SetActive(isHost);
+        endServerButton.gameObject.SetActive(isHost);
+
+        restartGameButton.interactable = isHost;
+        endServerButton.interactable = isHost;
+    }
+
+    public void OnRestartGameClicked()
+    {
+        Debug.Log("trying to restart");
+        if (!NetworkManager.Singleton.IsServer)
+        {
+            Debug.Log("restart failed");
+            return;
+        }
+
+        BluffGamemanager.Instance.RestartGameServer();
+    }
+
+    public void OnEndServerClicked()
+    {
+        Debug.Log("trying to end");
+
+        if (!NetworkManager.Singleton.IsServer)
+        {
+            Debug.Log("end failed");
+            return;
+        }
+
+        NetworkManager.Singleton.Shutdown();
+    }
+
 }

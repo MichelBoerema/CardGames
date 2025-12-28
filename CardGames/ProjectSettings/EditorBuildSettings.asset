@@ -5,16 +5,18 @@ EditorBuildSettings:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Scenes:
-  - enabled: 1
+  - enabled: 0
     path: Assets/Scenes/SampleScene.unity
     guid: 99c9720ab356a0642a771bea13969a05
   - enabled: 1
-    path: Assets/Scenes/BluffGame.unity
-    guid: 54d8347497f23b84aa4108b6507415ae
-  - enabled: 1
     path: Assets/Scenes/Lobby.unity
     guid: 26339b4cb85898c40b05ed748bb02320
+  - enabled: 1
+    path: Assets/Scenes/BluffGame.unity
+    guid: 54d8347497f23b84aa4108b6507415ae
   m_configObjects:
+    com.unity.adaptiveperformance.google.android.provider_settings: {fileID: 11400000, guid: 94855a7a948525e47a5b1c9a18a9a2c0, type: 2}
+    com.unity.adaptiveperformance.loader_settings: {fileID: 11400000, guid: bc13f09d4e9a30d4caf41e47a8d0ce40, type: 2}
     com.unity.adaptiveperformance.simulator.provider_settings: {fileID: 11400000, guid: 933493afe64715649a0303cd76f3080a, type: 2}
     com.unity.input.settings.actions: {fileID: -944628639613478452, guid: 052faaac586de48259a63d0c4782560b, type: 3}
   m_UseUCBPForAssetBundles: 0
