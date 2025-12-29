@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Collections.Generic;
 using Unity.Collections;
 using Unity.Netcode;
@@ -33,10 +34,15 @@ public class BluffGamemanager : NetworkBehaviour
     public TableRank currentTableRank;
     public List<CardValue> laatsteGespeeldeKaarten = new List<CardValue>();
     [SerializeField] private int currentPlayerIndex = 0;
+    private int roundNumber = 0;
 
     [Header("Bluff Tracking")]
     private int lastPlayedPlayerIndex = -1;
     private int bluffCallerIndex = -1;
+
+    [Header("Bluff Cooldown")]
+    [SerializeField] private float bluffRevealDuration = 3f;
+    private bool isResolvingBluff = false;
 
 
     private void Start()
@@ -89,7 +95,31 @@ public class BluffGamemanager : NetworkBehaviour
         DealCards();
         ChooseRandomTableRank();
         currentPlayerIndex = 0;
+
+        if(roundNumber == 0)
+            ShowRoundStartClientRpc(currentTableRank);
+        else
+            showRoundTableRankClientRpc(currentTableRank);
+
+
         StartTurn();
+    }
+
+    [ClientRpc]
+    void ShowRoundStartClientRpc(TableRank rank)
+    {
+        if (UIManager.Instance != null)
+        {
+            UIManager.Instance.ShowRoundStartPopup(rank);
+        }
+    }
+    [ClientRpc]
+    void showRoundTableRankClientRpc(TableRank rank)
+    {
+        if (UIManager.Instance != null)
+        {
+            UIManager.Instance.ShowTableRankPopup(rank);
+        }
     }
 
     void StartTurn()
@@ -239,22 +269,97 @@ public class BluffGamemanager : NetworkBehaviour
 
         Debug.Log($"Player {punishedPlayer.PlayerName.Value} pulls the trigger");
 
-        punishedPlayer.PullTrigger();
+        punishedPlayer.PullTrigger(punishedPlayer.PlayerName.Value);
     }
-
 
     [ServerRpc(RequireOwnership = false)]
     public void CallBluffServerRpc(ServerRpcParams rpcParams = default)
     {
+        if (isResolvingBluff)
+            return;
+
         ulong sender = rpcParams.Receive.SenderClientId;
 
         if (players[currentPlayerIndex].OwnerClientId != sender)
             return;
 
         bluffCallerIndex = currentPlayerIndex;
+        isResolvingBluff = true;
 
-        ResolveBluff();
+        // ONLY reveal here
+        ShowBluffRevealClientRpc(
+            players[lastPlayedPlayerIndex].PlayerName.Value,
+            laatsteGespeeldeKaarten.ToArray(),
+            currentTableRank
+        );
+
+        StartCoroutine(ResolveBluffAfterDelay());
+    }
+    IEnumerator ResolveBluffAfterDelay()
+    {
+        yield return new WaitForSeconds(bluffRevealDuration);
+
+        int punishedIndex = ResolveBluffInternal();
+        bool survived = players[punishedIndex].IsAlive;
+
+        ShowBluffSurvivalClientRpc(
+            players[punishedIndex].PlayerName.Value,
+            survived
+        );
+
+        yield return new WaitForSeconds(2.5f);
+
         EndTurnServer();
+        isResolvingBluff = false;
+    }
+    int ResolveBluffInternal()
+    {
+        bool isBluff = false;
+
+        foreach (CardValue card in laatsteGespeeldeKaarten)
+        {
+            if (card == CardValue.Joker)
+                continue;
+
+            if (!DoesCardMatchTableRank(card))
+            {
+                isBluff = true;
+                break;
+            }
+        }
+
+        int punishedPlayerIndex =
+            isBluff ? lastPlayedPlayerIndex : bluffCallerIndex;
+
+        ApplyRoulettePunishment(punishedPlayerIndex);
+        ResetGameState();
+
+        return punishedPlayerIndex;
+    }
+    [ClientRpc]
+    void ShowBluffSurvivalClientRpc(
+    FixedString32Bytes playerName,
+    bool survived)
+    {
+        if (UIManager.Instance != null)
+        {
+            UIManager.Instance.ShowBluffSurvivalPopup(playerName, survived);
+        }
+    }
+    [ClientRpc]
+    void ShowBluffRevealClientRpc(
+        FixedString32Bytes playerName,
+        CardValue[] cards,
+        TableRank rank)
+    {
+        if (UIManager.Instance != null)
+        {
+            UIManager.Instance.ShowBluffReveal(
+                playerName,
+                cards,
+                rank
+            );
+        }
     }
 
     public void OnPlayerDied(Player player)
@@ -301,7 +406,7 @@ public class BluffGamemanager : NetworkBehaviour
                 return index;
         }
 
-        return -1; // should never happen if >=1 alive
+        return -1; 
     }
 
     void EndGame()
@@ -350,6 +455,7 @@ public class BluffGamemanager : NetworkBehaviour
 
         lastPlayedPlayerIndex = -1;
         bluffCallerIndex = -1;
+        roundNumber = 0;
         laatsteGespeeldeKaarten.Clear();
 
         StartGameServer();
@@ -441,7 +547,7 @@ public class BluffGamemanager : NetworkBehaviour
 
         laatsteGespeeldeKaarten.Clear();
         deck?.Clear();
-        //currentPlayerIndex = 0;
+        roundNumber++;
 
         foreach (Player player in players)
         {

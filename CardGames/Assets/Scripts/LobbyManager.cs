@@ -27,6 +27,13 @@ public class LobbyManager : MonoBehaviour
     [Header("Name")]
     public InputField nameInputField;
 
+    [Header("Join Code UI")]
+    public GameObject joinCodeInputRoot;   // parent of InputField
+    public GameObject joinCodeDisplayRoot; // parent of Text
+    public GameObject startGameButtonRoot;
+    public GameObject hostGameButtonRoot;
+    public GameObject clientGameButtonRoot;
+
     void Awake()
     {
         if (Instance == null) Instance = this;
@@ -37,6 +44,8 @@ public class LobbyManager : MonoBehaviour
     {
         hostButton.interactable = false;
         joinButton.interactable = false;
+        startGameButton.interactable = false;
+        startGameButtonRoot.SetActive(false);
 
         StartCoroutine(WaitForServices());
 
@@ -46,6 +55,9 @@ public class LobbyManager : MonoBehaviour
 
         NetworkManager.Singleton.OnClientConnectedCallback += OnClientConnected;
         NetworkManager.Singleton.OnClientDisconnectCallback += OnClientDisconnected;
+
+        joinCodeInputRoot.SetActive(true);
+        joinCodeDisplayRoot.SetActive(false);
     }
     IEnumerator WaitForServices()
     {
@@ -74,8 +86,14 @@ public class LobbyManager : MonoBehaviour
         if (!connectedPlayers.Contains(clientId))
             connectedPlayers.Add(clientId);
 
-        UpdatePlayerList();
+        
         startGameButton.interactable = NetworkManager.Singleton.IsServer && connectedPlayers.Count > 0;
+
+        startGameButton.interactable =
+        NetworkManager.Singleton.IsServer &&
+        NetworkManager.Singleton.ConnectedClients.Count > 0;
+
+        UpdatePlayerList();
     }
 
     void OnClientDisconnected(ulong clientId)
@@ -108,8 +126,6 @@ public class LobbyManager : MonoBehaviour
         Allocation allocation = await RelayService.Instance.CreateAllocationAsync(4);
         string joinCode = await RelayService.Instance.GetJoinCodeAsync(allocation.AllocationId);
 
-        joinCodeDisplay.text = $"Code: {joinCode}";
-
         var transport = NetworkManager.Singleton.GetComponent<UnityTransport>();
         transport.SetRelayServerData(new RelayServerData(allocation, "dtls"));
 
@@ -117,6 +133,15 @@ public class LobbyManager : MonoBehaviour
 
         hostButton.interactable = false;
         joinButton.interactable = false;
+
+        // UI state for host
+        joinCodeInputRoot.SetActive(false);
+        joinCodeDisplayRoot.SetActive(true);
+        startGameButtonRoot.SetActive(true);
+        hostGameButtonRoot.SetActive(false);
+        clientGameButtonRoot.SetActive(false);
+
+        joinCodeDisplay.text = $"{joinCode}";
     }
 
     public async void JoinGame()
@@ -146,6 +171,14 @@ public class LobbyManager : MonoBehaviour
 
         hostButton.interactable = false;
         joinButton.interactable = false;
+
+        // UI state for client
+        joinCodeInputRoot.SetActive(false);
+        joinCodeDisplayRoot.SetActive(true);
+        hostGameButtonRoot.SetActive(false);
+        clientGameButtonRoot.SetActive(false);
+
+        joinCodeDisplay.text = $"{joinCode}";
     }
 
     public void ChooseName()

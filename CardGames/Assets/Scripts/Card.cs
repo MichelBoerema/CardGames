@@ -79,4 +79,17 @@ public class Card : MonoBehaviour
             default: return "?";
         }
     }
+
+    public void HighlightCard(bool isCorrect)
+    {
+        // Green for correct, red for incorrect
+        if (isCorrect)
+        {
+            background.color = Color.green;
+        }
+        else
+        {
+            background.color = Color.red;
+        }
+    }
 }

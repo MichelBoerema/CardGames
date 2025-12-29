@@ -103,7 +103,7 @@ public class Player : NetworkBehaviour
         UpdatePointsClientRpc(points,6);
     }
 
-    public void PullTrigger()
+    public void PullTrigger(FixedString32Bytes PlayerName)
     {
         if (!IsServer) return;
 
@@ -117,6 +117,8 @@ public class Player : NetworkBehaviour
         {
             OnPlayerDied(); 
         }
+
+        UIManager.Instance.ShowBluffSurvivalPopup(PlayerName, IsAlive);
     }
 
     void OnPlayerDied()
