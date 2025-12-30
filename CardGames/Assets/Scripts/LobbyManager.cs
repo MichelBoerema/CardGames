@@ -19,8 +19,13 @@ public class LobbyManager : MonoBehaviour
     public Button joinButton;
     public Button startGameButton;
     public InputField joinCodeField;
-    public Text joinCodeDisplay; // shows code to host
-    public Text playerListText;
+    public Text joinCodeDisplay;
+    public GameObject playerSetupRoot;
+
+    [Header("Player List UI")]
+    public Transform playerListParent;
+    public GameObject playerListRoot;
+    public GameObject playerRowPrefab;
 
     private List<ulong> connectedPlayers = new List<ulong>();
 
@@ -104,12 +109,34 @@ public class LobbyManager : MonoBehaviour
 
     void UpdatePlayerList()
     {
-        playerListText.text = "Players:\n";
+        foreach (Transform child in playerListParent)
+            Destroy(child.gameObject);
 
         foreach (var player in FindObjectsOfType<Player>())
         {
-            string name = player.PlayerName.Value.ToString();
-            playerListText.text += $"{name}\n";
+            GameObject row = Instantiate(playerRowPrefab, playerListParent);
+
+            Image avatarImage = row.transform.Find("AvatarImage").GetComponent<Image>();
+            Text nameText = row.transform.Find("PlayerNameText").GetComponent<Text>();
+
+            // Name
+            nameText.text = player.PlayerName.Value.ToString();
+
+            // Avatar
+            Texture2D avatar = LobbyAvatarController.LoadSavedAvatar();
+
+            if (avatar != null && player.IsOwner)
+            {
+                avatarImage.sprite = Sprite.Create(
+                    avatar,
+                    new Rect(0, 0, avatar.width, avatar.height),
+                    new Vector2(0.5f, 0.5f)
+                );
+            }
+            else
+            {
+                avatarImage.sprite = player.defaultAvatar;
+            }
         }
     }
 
@@ -121,8 +148,6 @@ public class LobbyManager : MonoBehaviour
             return;
         }
 
-        ChooseName();
-
         Allocation allocation = await RelayService.Instance.CreateAllocationAsync(4);
         string joinCode = await RelayService.Instance.GetJoinCodeAsync(allocation.AllocationId);
 
@@ -130,6 +155,8 @@ public class LobbyManager : MonoBehaviour
         transport.SetRelayServerData(new RelayServerData(allocation, "dtls"));
 
         NetworkManager.Singleton.StartHost();
+
+        ChooseName();
 
         hostButton.interactable = false;
         joinButton.interactable = false;
@@ -152,8 +179,6 @@ public class LobbyManager : MonoBehaviour
             return;
         }
 
-        ChooseName();
-
         string joinCode = joinCodeField.text.Trim().ToUpper();
 
         if (string.IsNullOrEmpty(joinCode))
@@ -169,6 +194,8 @@ public class LobbyManager : MonoBehaviour
 
         NetworkManager.Singleton.StartClient();
 
+        ChooseName();
+
         hostButton.interactable = false;
         joinButton.interactable = false;
 
@@ -179,6 +206,7 @@ public class LobbyManager : MonoBehaviour
         clientGameButtonRoot.SetActive(false);
 
         joinCodeDisplay.text = $"{joinCode}";
+
     }
 
     public void ChooseName()
@@ -193,6 +221,9 @@ public class LobbyManager : MonoBehaviour
 
         PlayerPrefs.SetString("PlayerName", chosenName);
         PlayerPrefs.Save();
+
+        playerSetupRoot.SetActive(false);
+        playerListRoot.SetActive(true);
 
         Debug.Log($"Saved player name: {chosenName}");
     }

@@ -215,7 +215,7 @@ public class UIManager : MonoBehaviour
         titleText.text = "Round Started";
 
         descriptionText.text =
-            "Deck Composition:\n" +
+            "Deck Contains:\n" +
             "• 6× King\n" +
             "• 6× Queen\n" +
             "• 6× Ace\n" +

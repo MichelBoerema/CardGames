@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using Unity.Collections;
 using Unity.Netcode;
 using UnityEngine;
+using UnityEngine.UI;
 
 public class Player : NetworkBehaviour
 {
@@ -18,6 +19,9 @@ public class Player : NetworkBehaviour
         NetworkVariableWritePermission.Server
     );
 
+    [SerializeField] private Image avatarImage;
+    [SerializeField] public Sprite defaultAvatar;
+
     [Header("Punishment")]
     public int points;
     private int shotsUntilDeath;
@@ -28,7 +32,25 @@ public class Player : NetworkBehaviour
         if (IsOwner)
         {
             SendNameToServer();
+            LoadAvatar();
         }
+    }
+
+    void LoadAvatar()
+    {
+        Texture2D avatar = LobbyAvatarController.LoadSavedAvatar();
+
+        if (avatar == null)
+        {
+            avatarImage.sprite = defaultAvatar;
+            return;
+        }
+
+        avatarImage.sprite = Sprite.Create(
+            avatar,
+            new Rect(0, 0, avatar.width, avatar.height),
+            new Vector2(0.5f, 0.5f)
+        );
     }
 
     [ClientRpc]
