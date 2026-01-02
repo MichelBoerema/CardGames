@@ -24,24 +24,27 @@ public enum TableRank
 
 public class BluffGamemanager : NetworkBehaviour
 {
-    public List<Player> players = new List<Player>();
-
-    private List<CardValue> deck;
-
+    // Singleton
     public static BluffGamemanager Instance;
 
-    [Header("Game State")]
+    // Players & deck
+    public List<Player> players = new();
+    private List<CardValue> deck;
+
+    // Game state
     public TableRank currentTableRank;
-    public List<CardValue> laatsteGespeeldeKaarten = new List<CardValue>();
+    public List<CardValue> laatsteGespeeldeKaarten = new();
     [SerializeField] private int currentPlayerIndex = 0;
     private int roundNumber = 0;
+    private bool gameOver = false;
 
-    [Header("Bluff Tracking")]
+    // Bluff tracking
     private int lastPlayedPlayerIndex = -1;
     private int bluffCallerIndex = -1;
 
-    [Header("Bluff Cooldown")]
+    // Bluff flow
     [SerializeField] private float bluffRevealDuration = 3f;
+    [SerializeField] private float bluffTotalAnimationTime = 3f;
     private bool isResolvingBluff = false;
 
 
@@ -90,36 +93,30 @@ public class BluffGamemanager : NetworkBehaviour
     }
     private void StartGameServer()
     {
+        if (gameOver)
+            return;
+
         deck = GenerateDeck();
         ShuffleDeck(deck);
         DealCards();
         ChooseRandomTableRank();
         currentPlayerIndex = 0;
 
-        if(roundNumber == 0)
-            ShowRoundStartClientRpc(currentTableRank);
+        if (roundNumber == 0)
+        {
+            ShowPreRoundIntroClientRpc(currentTableRank);
+        }
         else
-            showRoundTableRankClientRpc(currentTableRank);
+        {
+            ShowRoundTableRankClientRpc(currentTableRank);
+        }
 
-
+        StartCoroutine(StartTurnAfterIntro());
+    }
+    IEnumerator StartTurnAfterIntro()
+    {
+        yield return new WaitForSeconds(3); // match animation duration
         StartTurn();
-    }
-
-    [ClientRpc]
-    void ShowRoundStartClientRpc(TableRank rank)
-    {
-        if (UIManager.Instance != null)
-        {
-            UIManager.Instance.ShowRoundStartPopup(rank);
-        }
-    }
-    [ClientRpc]
-    void showRoundTableRankClientRpc(TableRank rank)
-    {
-        if (UIManager.Instance != null)
-        {
-            UIManager.Instance.ShowTableRankPopup(rank);
-        }
     }
 
     void StartTurn()
@@ -133,25 +130,14 @@ public class BluffGamemanager : NetworkBehaviour
         }
     }
 
-
-    [ServerRpc(RequireOwnership = false)]
-    public void RequestEndTurnServerRpc()
-    {
-        EndTurnServer();
-    }
-
-
     void EndTurnServer()
     {
-        if (!IsServer) return;
-
         AdvanceToNextAlivePlayer();
     }
 
     void AdvanceToNextAlivePlayer()
     {
         int nextIndex = GetNextAlivePlayerIndex(currentPlayerIndex);
-
         if (nextIndex == -1)
         {
             EndGame();
@@ -162,21 +148,188 @@ public class BluffGamemanager : NetworkBehaviour
         StartTurn();
     }
 
+    [ServerRpc(RequireOwnership = false)]
+    public void PlayCardsServerRpc(CardValue[] cards, ServerRpcParams rpcParams = default)
+    {
+        Player player = players[currentPlayerIndex];
+
+        if (player.OwnerClientId != rpcParams.Receive.SenderClientId)
+            return;
+
+        lastPlayedPlayerIndex = currentPlayerIndex;
+        laatsteGespeeldeKaarten.Clear();
+        laatsteGespeeldeKaarten.AddRange(cards);
+
+        UpdateLastClaimsClientRpc(
+            player.PlayerName.Value,
+            cards.Length,
+            currentTableRank
+        );
+
+        EndTurnServer();
+    }
+
+    [ServerRpc(RequireOwnership = false)]
+    public void CallBluffServerRpc(ServerRpcParams rpcParams = default)
+    {
+        if (isResolvingBluff)
+            return;
+
+        if (players[currentPlayerIndex].OwnerClientId != rpcParams.Receive.SenderClientId)
+            return;
+
+        bluffCallerIndex = currentPlayerIndex;
+        isResolvingBluff = true;
+
+        ShowBluffRevealClientRpc(
+            players[lastPlayedPlayerIndex].PlayerName.Value,
+            laatsteGespeeldeKaarten.ToArray(),
+            currentTableRank
+        );
+
+        StartCoroutine(ResolveBluffSequence());
+    }
+
+    IEnumerator ResolveBluffSequence()
+    {
+        yield return new WaitForSeconds(bluffRevealDuration);
+
+        int punishedIndex = DeterminePunishedPlayer();
+        Player punishedPlayer = players[punishedIndex];
+
+        punishedPlayer.PullTrigger(punishedPlayer.PlayerName.Value);
+        bool survived = punishedPlayer.IsAlive;
+
+        ShowBluffClientRpc(
+            punishedPlayer.NetworkObject,
+            laatsteGespeeldeKaarten.ToArray(),
+            currentTableRank,
+            survived
+        );
+
+        yield return new WaitForSeconds(bluffTotalAnimationTime);
+
+        // NOW decide game state
+        if (!survived && GetAlivePlayerCount() <= 1 && UIManager.Instance.isPopupLocked == false)
+        {
+            EndGame();
+            yield break;
+        }
+
+        ResetRoundStateOnly();
+        StartGameServer();
+
+        isResolvingBluff = false;
+    }
+
+    public void EndGame()
+    {
+        if (gameOver)
+            return;
+
+        gameOver = true;
+
+        Player winner = players.Find(p => p.IsAlive);
+        EndGameClientRpc(winner != null ? winner.PlayerName.Value : "Nobody");
+    }
+
+    public void RestartGameServer()
+    {
+        if (!IsServer) return;
+
+        foreach (Player player in players)
+        {
+            player.IsAlive = true;
+            player.InitializeRoulette();
+            player.ClearHand();
+        }
+
+        gameOver = false;
+        roundNumber = 0;
+        StartGameServer();
+        HideGameOverClientRpc();
+    }
+
+    // ===== ROUND START =====
+    [ClientRpc]
+    void ShowPreRoundIntroClientRpc(TableRank rank)
+    {
+        UIManager.Instance?.ShowFullRoundIntro(rank);
+    }
+
+    [ClientRpc]
+    void ShowRoundTableRankClientRpc(TableRank rank)
+    {
+        UIManager.Instance?.ShowTableRankPopup(rank);
+    }
+
+    [ClientRpc]
+    void UpdateTableRankClientRpc(TableRank rank)
+    {
+        UIManager.Instance?.UpdateTableRank(rank);
+    }
+
+    // ===== PLAY CLAIM =====
+    [ClientRpc]
+    void UpdateLastClaimsClientRpc(
+        FixedString32Bytes playerName,
+        int amountClaimed,
+        TableRank rank)
+    {
+        UIManager.Instance?.UpdateLastClaims(playerName, amountClaimed, rank);
+    }
+
+    // ===== BLUFF REVEAL =====
+    [ClientRpc]
+    void ShowBluffRevealClientRpc(
+        FixedString32Bytes playerName,
+        CardValue[] cards,
+        TableRank rank)
+    {
+        UIManager.Instance?.ShowBluffReveal(playerName, cards, rank);
+    }
+
+    // ===== BLUFF RESULT =====
+    [ClientRpc]
+    void ShowBluffClientRpc(
+        NetworkObjectReference playerRef,
+        CardValue[] cards,
+        TableRank rank,
+        bool survived)
+    {
+        if (!playerRef.TryGet(out NetworkObject obj)) return;
+
+        Player player = obj.GetComponent<Player>();
+        UIManager.Instance.HidePopup();
+        UIManager.Instance.ShowBluffRevealSequence(player, cards, rank, survived);
+    }
+
+    // ===== GAME OVER =====
+    [ClientRpc]
+    void EndGameClientRpc(FixedString32Bytes winnerName)
+    {
+        bool isHost = NetworkManager.Singleton.IsServer;
+        UIManager.Instance?.ShowGameOver(winnerName, isHost);
+    }
+
+    [ClientRpc]
+    void HideGameOverClientRpc()
+    {
+        UIManager.Instance?.gameOverPanel.SetActive(false);
+    }
+
+    [ServerRpc(RequireOwnership = false)]
+    public void RequestEndTurnServerRpc()
+    {
+        EndTurnServer();
+    }
+
     void ChooseRandomTableRank()
     {
         TableRank[] ranks = { TableRank.King, TableRank.Queen, TableRank.Ace };
         currentTableRank = ranks[Random.Range(0, ranks.Length)];
 
         UpdateTableRankClientRpc(currentTableRank);
-    }
-
-    [ClientRpc]
-    void UpdateTableRankClientRpc(TableRank rank)
-    {
-        if (UIManager.Instance != null)
-        {
-            UIManager.Instance.UpdateTableRank(rank);
-        }
     }
 
     public void PlayCards(List<CardValue> cards)
@@ -186,179 +339,38 @@ public class BluffGamemanager : NetworkBehaviour
         PlayCardsServerRpc(cards.ToArray());
     }
 
-    [ServerRpc(RequireOwnership = false)]
-    public void PlayCardsServerRpc(CardValue[] cards, ServerRpcParams rpcParams = default)
+    int DeterminePunishedPlayer()
     {
-        ulong senderClientId = rpcParams.Receive.SenderClientId;
+        bool isBluff = false;
 
-        Player player = players[currentPlayerIndex];
-
-        if (player.OwnerClientId != senderClientId)
+        foreach (CardValue card in laatsteGespeeldeKaarten)
         {
-            Debug.LogWarning("Player tried to play out of turn!");
-            return;
+            if (card == CardValue.Joker)
+                continue;
+
+            if (!DoesCardMatchTableRank(card))
+            {
+                isBluff = true;
+                break;
+            }
         }
 
-        lastPlayedPlayerIndex = currentPlayerIndex;
-
+        return isBluff ? lastPlayedPlayerIndex : bluffCallerIndex;
+    }
+    void ResetRoundStateOnly()
+    {
         laatsteGespeeldeKaarten.Clear();
-        laatsteGespeeldeKaarten.AddRange(cards);
+        deck?.Clear();
+        roundNumber++;
 
-        UpdateLastClaimsClientRpc(player.PlayerName.Value, laatsteGespeeldeKaarten.Count, currentTableRank);
+        lastPlayedPlayerIndex = -1;
+        bluffCallerIndex = -1;
 
-        EndTurnServer();
-    }
+        UIManager.Instance.lastClaims.text = "Waiting For\nFirst Claim";
 
-    [ClientRpc]
-    void UpdateLastClaimsClientRpc(FixedString32Bytes PlayerName, int amountClaimed, TableRank rank)
-    {
-        if (UIManager.Instance != null)
+        foreach (Player player in players)
         {
-            UIManager.Instance.UpdateLastClaims(PlayerName, amountClaimed, rank);
-        }
-    }
-
-
-    public void ResolveBluff()
-    {
-        if (laatsteGespeeldeKaarten.Count == 0)
-        {
-            Debug.Log("No cards have been played yet.");
-            return;
-        }
-
-        bool isBluff = false;
-
-        foreach (CardValue card in laatsteGespeeldeKaarten)
-        {
-            // Joker is altijd geldig
-            if (card == CardValue.Joker)
-                continue;
-
-            // Komt kaart niet overeen met table rank  bluff
-            if (!DoesCardMatchTableRank(card))
-            {
-                isBluff = true;
-                break;
-            }
-        }
-
-        int punishedPlayerIndex;
-
-        if (isBluff)
-        {
-            Debug.Log("BLUFF CALLED! Player was lying.");
-            punishedPlayerIndex = lastPlayedPlayerIndex;
-        }
-        else
-        {
-            Debug.Log("NO BLUFF! Caller was wrong.");
-            punishedPlayerIndex = bluffCallerIndex;
-        }
-
-        ApplyRoulettePunishment(punishedPlayerIndex);
-        ResetGameState();
-    }
-
-    void ApplyRoulettePunishment(int playerIndex)
-    {
-        if (playerIndex < 0 || playerIndex >= players.Count)
-            return;
-
-        Player punishedPlayer = players[playerIndex];
-
-        Debug.Log($"Player {punishedPlayer.PlayerName.Value} pulls the trigger");
-
-        punishedPlayer.PullTrigger(punishedPlayer.PlayerName.Value);
-    }
-
-    [ServerRpc(RequireOwnership = false)]
-    public void CallBluffServerRpc(ServerRpcParams rpcParams = default)
-    {
-        if (isResolvingBluff)
-            return;
-
-        ulong sender = rpcParams.Receive.SenderClientId;
-
-        if (players[currentPlayerIndex].OwnerClientId != sender)
-            return;
-
-        bluffCallerIndex = currentPlayerIndex;
-        isResolvingBluff = true;
-
-        // ONLY reveal here
-        ShowBluffRevealClientRpc(
-            players[lastPlayedPlayerIndex].PlayerName.Value,
-            laatsteGespeeldeKaarten.ToArray(),
-            currentTableRank
-        );
-
-        StartCoroutine(ResolveBluffAfterDelay());
-    }
-    IEnumerator ResolveBluffAfterDelay()
-    {
-        yield return new WaitForSeconds(bluffRevealDuration);
-
-        int punishedIndex = ResolveBluffInternal();
-        bool survived = players[punishedIndex].IsAlive;
-
-        ShowBluffSurvivalClientRpc(
-            players[punishedIndex].PlayerName.Value,
-            survived
-        );
-
-        yield return new WaitForSeconds(2.5f);
-
-        EndTurnServer();
-        isResolvingBluff = false;
-    }
-    int ResolveBluffInternal()
-    {
-        bool isBluff = false;
-
-        foreach (CardValue card in laatsteGespeeldeKaarten)
-        {
-            if (card == CardValue.Joker)
-                continue;
-
-            if (!DoesCardMatchTableRank(card))
-            {
-                isBluff = true;
-                break;
-            }
-        }
-
-        int punishedPlayerIndex =
-            isBluff ? lastPlayedPlayerIndex : bluffCallerIndex;
-
-        ApplyRoulettePunishment(punishedPlayerIndex);
-        ResetGameState();
-
-        return punishedPlayerIndex;
-    }
-    [ClientRpc]
-    void ShowBluffSurvivalClientRpc(
-    FixedString32Bytes playerName,
-    bool survived)
-    {
-        if (UIManager.Instance != null)
-        {
-            UIManager.Instance.ShowBluffSurvivalPopup(playerName, survived);
-        }
-    }
-    [ClientRpc]
-    void ShowBluffRevealClientRpc(
-        FixedString32Bytes playerName,
-        CardValue[] cards,
-        TableRank rank)
-    {
-        if (UIManager.Instance != null)
-        {
-            UIManager.Instance.ShowBluffReveal(
-                playerName,
-                cards,
-                rank
-            );
+            player.ClearHand();
         }
     }
 
@@ -408,69 +420,6 @@ public class BluffGamemanager : NetworkBehaviour
 
         return -1; 
     }
-
-    void EndGame()
-    {
-        Player winner = null;
-
-        foreach (var player in players)
-        {
-            if (player.IsAlive)
-            {
-                winner = player;
-                break;
-            }
-        }
-
-        Debug.Log($"GAME OVER! Winner: {winner?.PlayerName.Value}");
-
-        EndGameClientRpc(winner != null ? winner.PlayerName.Value : "Nobody");
-    }
-
-
-    [ClientRpc]
-    void EndGameClientRpc(FixedString32Bytes winnerName)
-    {
-        bool isHost = NetworkManager.Singleton.IsServer;
-
-        if (UIManager.Instance != null)
-        {
-            UIManager.Instance.ShowGameOver(winnerName, isHost);
-        }
-    }
-
-    public void RestartGameServer()
-    {
-        if (!IsServer) return;
-
-        Debug.Log("Restarting game...");
-
-        // Reset players
-        foreach (Player player in players)
-        {
-            player.IsAlive = true;
-            player.InitializeRoulette();
-            player.ClearHand();
-        }
-
-        lastPlayedPlayerIndex = -1;
-        bluffCallerIndex = -1;
-        roundNumber = 0;
-        laatsteGespeeldeKaarten.Clear();
-
-        StartGameServer();
-        HideGameOverClientRpc();
-    }
-
-    [ClientRpc]
-    void HideGameOverClientRpc()
-    {
-        if (UIManager.Instance != null)
-        {
-            UIManager.Instance.gameOverPanel.SetActive(false);
-        }
-    }
-
 
     bool DoesCardMatchTableRank(CardValue card)
     {
@@ -539,20 +488,5 @@ public class BluffGamemanager : NetworkBehaviour
             deck[i] = deck[randomIndex];
             deck[randomIndex] = temp;
         }
-    }
-
-    void ResetGameState()
-    {
-        if (!IsServer) return;
-
-        laatsteGespeeldeKaarten.Clear();
-        deck?.Clear();
-        roundNumber++;
-
-        foreach (Player player in players)
-        {
-            player.ClearHand();
-        }
-        StartGameServer();
     }
 }

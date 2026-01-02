@@ -33,7 +33,20 @@ public class UIManager : MonoBehaviour
     public Text descriptionText;
     public Transform cardSpawnParent;
     public GameObject uiCardPrefab;
+    public bool isPopupLocked = false;
 
+    [Header("Bluff Animation")]
+    public Image punishedAvatarImage;
+    public GameObject gunObject;
+    public Animator gunAnimator;
+    public AudioSource gunAudio;
+    public AudioClip gunBangClip;
+    public AudioClip gunClickClip;
+
+    [Header("Pre-Round Intro")]
+    public GameObject preRoundIntroPopup;   // panel with image
+    public Animator preRoundIntroAnimator;  // animator on that panel
+    [SerializeField] private float preRoundIntroDuration = 2.5f;
 
     [Header("Points UI")]
     public Text pointsText;
@@ -207,6 +220,39 @@ public class UIManager : MonoBehaviour
             Destroy(child.gameObject);
     }
 
+    public void ShowFullRoundIntro(TableRank rank)
+    {
+        StartCoroutine(FullRoundIntroRoutine(rank));
+    }
+
+    IEnumerator FullRoundIntroRoutine(TableRank rank)
+    {
+        yield return PreRoundIntroRoutineInternal();
+
+        ShowRoundStartPopup(rank);
+        yield return new WaitForSeconds(4f);
+
+        ShowTableRankPopup(rank);
+        yield return new WaitForSeconds(2.5f);
+
+        HidePopup();
+    }
+
+    IEnumerator PreRoundIntroRoutineInternal()
+    {
+        HidePopup();
+
+        preRoundIntroPopup.SetActive(true);
+
+        if (preRoundIntroAnimator != null)
+            preRoundIntroAnimator.Play(0, 0, 0f);
+
+        yield return new WaitForSeconds(preRoundIntroDuration);
+
+        preRoundIntroPopup.SetActive(false);
+    }
+
+
     public void ShowRoundStartPopup(TableRank tableRank)
     {
         infoPopup.SetActive(true);
@@ -219,58 +265,120 @@ public class UIManager : MonoBehaviour
             "• 6× King\n" +
             "• 6× Queen\n" +
             "• 6× Ace\n" +
-            "• 2× Joker\n\n" +
-            $"Table Rank: {tableRank}";
-
+            "• 2× Joker";
         StartCoroutine(HidePopupAfterDelay(4f));
     }
     public void ShowTableRankPopup(TableRank rank)
     {
+        StartCoroutine(ShowTableRankWhenReady(rank));
+    }
+
+    IEnumerator ShowTableRankWhenReady(TableRank rank)
+    {
+        while (isPopupLocked)
+            yield return null;
+
         infoPopup.SetActive(true);
         ClearSpawnedCards();
 
-        titleText.text = "Table Rank";
-        descriptionText.text = $"This round is played as:\n\n{rank}";
+        titleText.text = $"{rank}'s table";
+        descriptionText.text = "";
 
-        StartCoroutine(HidePopupAfterDelay(2.5f));
-    }
-
-    public void ShowBluffRevealSequence(
-    FixedString32Bytes playerName,
-    CardValue[] cards,
-    TableRank rank,
-    bool survived)
-    {
-        StartCoroutine(BluffRevealSequence(playerName, cards, rank, survived));
-    }
-    IEnumerator BluffRevealSequence(
-    FixedString32Bytes playerName,
-    CardValue[] cards,
-    TableRank rank,
-    bool survived)
-    {
-        ShowBluffReveal(playerName, cards, rank);
-
-        yield return new WaitForSeconds(3f);
-
-        ShowBluffSurvivalPopup(playerName, survived);
-
-        yield return new WaitForSeconds(5f);
+        yield return new WaitForSeconds(2.5f);
 
         HidePopup();
     }
-    public void ShowBluffSurvivalPopup(
-    FixedString32Bytes playerName,
+
+
+    public void ShowBluffRevealSequence(
+     Player punishedPlayer,
+     CardValue[] cards,
+     TableRank rank,
+     bool survived)
+    {
+        if (isPopupLocked)
+            return;
+
+        StartCoroutine(BluffRevealSequence(punishedPlayer, cards, rank, survived));
+    }
+
+    IEnumerator BluffRevealSequence(
+    Player punishedPlayer,
+    CardValue[] cards,
+    TableRank rank,
+    bool survived)
+    {
+        isPopupLocked = true;
+
+        ShowBluffReveal(
+            punishedPlayer.PlayerName.Value,
+            cards,
+            rank
+        );
+
+        yield return new WaitForSeconds(0.5f);
+
+        ClearSpawnedCards();
+        descriptionText.text = "";
+
+        yield return StartCoroutine(
+            ShowBluffSurvivalSequence(punishedPlayer, survived)
+        );
+
+        yield return new WaitForSeconds(0.5f);
+
+        HidePopup();
+
+        isPopupLocked = false;
+    }
+
+    IEnumerator ShowBluffSurvivalSequence(
+    Player punishedPlayer,
     bool survived)
     {
         infoPopup.SetActive(true);
         ClearSpawnedCards();
 
-        titleText.text = "Bluff Result";
-        descriptionText.text = survived
-            ? $"{playerName} survived!"
-            : $"{playerName} died!";
+        titleText.text = "";
+
+        punishedAvatarImage.sprite = punishedPlayer.GetAvatarSprite();
+        punishedAvatarImage.gameObject.SetActive(true);
+
+        gunObject.SetActive(true);
+
+        yield return StartCoroutine(
+            PlayGunSequenceWithResultText(punishedPlayer, survived)
+        );
+
+        gunObject.SetActive(false);
+        punishedAvatarImage.gameObject.SetActive(false);
     }
+
+    IEnumerator PlayGunSequenceWithResultText(
+    Player punishedPlayer,
+    bool survived)
+    {
+        gunAnimator.Play("Idle", 0, 0f);
+        yield return new WaitForSeconds(0.3f);
+
+        gunAnimator.SetTrigger("Aim");
+        yield return new WaitForSeconds(1.0f);
+
+        if (survived)
+        {
+            gunAnimator.SetTrigger("Click");
+            gunAudio.PlayOneShot(gunClickClip);
+        }
+        else
+        {
+            gunAnimator.SetTrigger("Bang");
+            gunAudio.PlayOneShot(gunBangClip);
+        }
+
+        yield return new WaitForSeconds(3f);
+
+    }
+
 
     public void ShowBluffReveal(
     FixedString32Bytes playerName,
@@ -280,8 +388,8 @@ public class UIManager : MonoBehaviour
         infoPopup.SetActive(true);
         ClearSpawnedCards();
 
-        titleText.text = "Bluff Revealed";
-        descriptionText.text = $"{playerName} claimed {cards.Length} {rank}s";
+        titleText.text = $"{playerName} claimed {cards.Length}X {rank}";
+        descriptionText.text = "";
 
         foreach (CardValue cardValue in cards)
         {

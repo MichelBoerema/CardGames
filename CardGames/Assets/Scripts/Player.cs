@@ -19,8 +19,15 @@ public class Player : NetworkBehaviour
         NetworkVariableWritePermission.Server
     );
 
-    [SerializeField] private Image avatarImage;
+    [SerializeField] private Sprite cachedAvatarSprite;
     [SerializeField] public Sprite defaultAvatar;
+    public NetworkVariable<FixedString4096Bytes> AvatarBase64 =
+    new NetworkVariable<FixedString4096Bytes>(
+        "",
+        NetworkVariableReadPermission.Everyone,
+        NetworkVariableWritePermission.Server
+    );
+
 
     [Header("Punishment")]
     public int points;
@@ -28,30 +35,60 @@ public class Player : NetworkBehaviour
 
     public override void OnNetworkSpawn()
     {
-        Debug.Log($"Player spawned | Server={IsServer} | Owner={IsOwner}");
         if (IsOwner)
         {
             SendNameToServer();
-            LoadAvatar();
+            SendAvatarToServer();
         }
+
+        AvatarBase64.OnValueChanged += OnAvatarChanged;
+
+        if (!string.IsNullOrEmpty(AvatarBase64.Value.ToString()))
+            OnAvatarChanged("", AvatarBase64.Value);
     }
 
-    void LoadAvatar()
+    void SendAvatarToServer()
     {
         Texture2D avatar = LobbyAvatarController.LoadSavedAvatar();
-
         if (avatar == null)
+            return;
+
+        string base64 = System.Convert.ToBase64String(avatar.EncodeToPNG());
+        SetAvatarServerRpc(base64);
+    }
+
+    [ServerRpc(RequireOwnership = false)]
+    void SetAvatarServerRpc(string base64)
+    {
+        AvatarBase64.Value = base64;
+    }
+    public Sprite GetAvatarSprite()
+    {
+        return cachedAvatarSprite != null
+            ? cachedAvatarSprite
+            : defaultAvatar;
+    }
+
+    void OnAvatarChanged(FixedString4096Bytes oldValue, FixedString4096Bytes newValue)
+    {
+        if (string.IsNullOrEmpty(newValue.ToString()))
         {
-            avatarImage.sprite = defaultAvatar;
+            cachedAvatarSprite = defaultAvatar;
             return;
         }
 
-        avatarImage.sprite = Sprite.Create(
-            avatar,
-            new Rect(0, 0, avatar.width, avatar.height),
+        byte[] data = System.Convert.FromBase64String(newValue.ToString());
+
+        Texture2D tex = new Texture2D(2, 2);
+        tex.LoadImage(data);
+
+        cachedAvatarSprite = Sprite.Create(
+            tex,
+            new Rect(0, 0, tex.width, tex.height),
             new Vector2(0.5f, 0.5f)
         );
     }
+
 
     [ClientRpc]
     public void SetTurnClientRpc(bool isMyTurn)
@@ -139,8 +176,6 @@ public class Player : NetworkBehaviour
         {
             OnPlayerDied(); 
         }
-
-        UIManager.Instance.ShowBluffSurvivalPopup(PlayerName, IsAlive);
     }
 
     void OnPlayerDied()
