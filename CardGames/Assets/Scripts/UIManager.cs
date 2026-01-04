@@ -34,9 +34,12 @@ public class UIManager : MonoBehaviour
     public Transform cardSpawnParent;
     public GameObject uiCardPrefab;
     public bool isPopupLocked = false;
+    [Header("Title Animation")]
+    public Animator titleAnimator;
 
     [Header("Bluff Animation")]
     public Image punishedAvatarImage;
+    public Text punishedPlayerNameText;
     public GameObject gunObject;
     public Animator gunAnimator;
     public AudioSource gunAudio;
@@ -45,8 +48,21 @@ public class UIManager : MonoBehaviour
 
     [Header("Pre-Round Intro")]
     public GameObject preRoundIntroPopup;   // panel with image
-    public Animator preRoundIntroAnimator;  // animator on that panel
-    [SerializeField] private float preRoundIntroDuration = 2.5f;
+    public Animator preRoundIntroAnimator;
+    public AudioSource preGunAudio;
+    public AudioClip gunReloadClip;
+    [SerializeField] private float preRoundIntroDuration = 3f;
+
+    [Header("Table Rank Title")]
+    public Text tableRankTitleText;
+    public GameObject panelTableRank;
+    public Animator tableRankTitleAnimator;
+
+    [Header("Central Pile")]
+    public Transform pileParent;
+    public GameObject cardBacksidePrefab;
+
+    private readonly List<GameObject> activePileCards = new();
 
     [Header("Points UI")]
     public Text pointsText;
@@ -127,6 +143,17 @@ public class UIManager : MonoBehaviour
         BluffGamemanager.Instance.CallBluffServerRpc();
     }
 
+    public void ForceCallBluffOnly()
+    {
+        playCardsButton.interactable = false;
+        playCardsButton.gameObject.SetActive(false);
+
+        callBluffButton.interactable = true;
+        callBluffButton.gameObject.SetActive(true);
+
+        SetHandInteractable(false);
+    }
+
     public void OnRestartGameClicked()
     {
         Debug.Log("trying to restart");
@@ -149,7 +176,7 @@ public class UIManager : MonoBehaviour
             return;
         }
 
-        NetworkManager.Singleton.Shutdown();
+        BluffGamemanager.Instance.GoBackToLobby();
     }
 
     #region UpdateTableRank
@@ -211,6 +238,7 @@ public class UIManager : MonoBehaviour
     public void HidePopup()
     {
         infoPopup.SetActive(false);
+        panelTableRank.SetActive(false);
         ClearSpawnedCards();
     }
 
@@ -243,6 +271,7 @@ public class UIManager : MonoBehaviour
         HidePopup();
 
         preRoundIntroPopup.SetActive(true);
+        preGunAudio.PlayOneShot(gunReloadClip);
 
         if (preRoundIntroAnimator != null)
             preRoundIntroAnimator.Play(0, 0, 0f);
@@ -251,7 +280,6 @@ public class UIManager : MonoBehaviour
 
         preRoundIntroPopup.SetActive(false);
     }
-
 
     public void ShowRoundStartPopup(TableRank tableRank)
     {
@@ -278,17 +306,59 @@ public class UIManager : MonoBehaviour
         while (isPopupLocked)
             yield return null;
 
-        infoPopup.SetActive(true);
+        infoPopup.SetActive(false);
         ClearSpawnedCards();
 
-        titleText.text = $"{rank}'s table";
-        descriptionText.text = "";
+        panelTableRank.SetActive(true);
+        tableRankTitleText.text = $"{rank}'s table";
+
+        if (tableRankTitleAnimator != null)
+        {
+            tableRankTitleAnimator.ResetTrigger("ZoomOut");
+            tableRankTitleAnimator.SetTrigger("ZoomOut");
+        }
 
         yield return new WaitForSeconds(2.5f);
 
+        panelTableRank.SetActive(false);
         HidePopup();
     }
 
+    public void ShowPlayedCardsPile(int cardCount)
+    {
+        //ClearPlayedCardsPile();
+
+        for (int i = 0; i < cardCount; i++)
+        {
+            GameObject card = Instantiate(cardBacksidePrefab, pileParent);
+
+            RectTransform rt = card.GetComponent<RectTransform>();
+
+            // EXACT same position
+            rt.anchoredPosition = Vector2.zero;
+
+            // Random rotation only
+            rt.localRotation = Quaternion.Euler(
+                0f,
+                0f,
+                Random.Range(-12f, 12f)
+            );
+            rt.localPosition = new Vector3(0f, 0f, -i * 0.01f);
+
+            // Ensure correct draw order (last card on top)
+            rt.SetAsLastSibling();
+
+            activePileCards.Add(card);
+        }
+    }
+
+    public void ClearPlayedCardsPile()
+    {
+        foreach (var card in activePileCards)
+            Destroy(card);
+
+        activePileCards.Clear();
+    }
 
     public void ShowBluffRevealSequence(
      Player punishedPlayer,
@@ -325,8 +395,6 @@ public class UIManager : MonoBehaviour
             ShowBluffSurvivalSequence(punishedPlayer, survived)
         );
 
-        yield return new WaitForSeconds(0.5f);
-
         HidePopup();
 
         isPopupLocked = false;
@@ -341,8 +409,12 @@ public class UIManager : MonoBehaviour
 
         titleText.text = "";
 
-        punishedAvatarImage.sprite = punishedPlayer.GetAvatarSprite();
+        punishedAvatarImage.sprite = punishedPlayer.GetNetworkAvatar();
         punishedAvatarImage.gameObject.SetActive(true);
+
+        // Player Name
+        punishedPlayerNameText.text = punishedPlayer.PlayerName.Value.ToString();
+        punishedPlayerNameText.gameObject.SetActive(true);
 
         gunObject.SetActive(true);
 
@@ -352,17 +424,17 @@ public class UIManager : MonoBehaviour
 
         gunObject.SetActive(false);
         punishedAvatarImage.gameObject.SetActive(false);
+        punishedPlayerNameText.gameObject.SetActive(false);
     }
 
     IEnumerator PlayGunSequenceWithResultText(
     Player punishedPlayer,
     bool survived)
     {
-        gunAnimator.Play("Idle", 0, 0f);
         yield return new WaitForSeconds(0.3f);
 
         gunAnimator.SetTrigger("Aim");
-        yield return new WaitForSeconds(1.0f);
+        yield return new WaitForSeconds(2f);
 
         if (survived)
         {
@@ -375,7 +447,8 @@ public class UIManager : MonoBehaviour
             gunAudio.PlayOneShot(gunBangClip);
         }
 
-        yield return new WaitForSeconds(3f);
+        yield return new WaitForSeconds(2f);
+        ClearPlayedCardsPile();
 
     }
 

@@ -1,3 +1,5 @@
+using System;
+using System.Collections;
 using System.Collections.Generic;
 using Unity.Collections;
 using Unity.Netcode;
@@ -8,88 +10,110 @@ public class Player : NetworkBehaviour
 {
     public List<CardValue> hand = new List<CardValue>();
 
+    [Header("Punishment")]
+    public int points;
+    private int shotsUntilDeath;
+
     public bool IsMyTurn { get; private set; }
     public bool IsAlive { get; set; } = true;
 
 
     public NetworkVariable<FixedString32Bytes> PlayerName =
-    new NetworkVariable<FixedString32Bytes>(
-        "Player",
-        NetworkVariableReadPermission.Everyone,
-        NetworkVariableWritePermission.Server
-    );
+        new NetworkVariable<FixedString32Bytes>(
+            "Player",
+            NetworkVariableReadPermission.Everyone,
+            NetworkVariableWritePermission.Server
+        );
 
-    [SerializeField] private Sprite cachedAvatarSprite;
-    [SerializeField] public Sprite defaultAvatar;
-    public NetworkVariable<FixedString4096Bytes> AvatarBase64 =
-    new NetworkVariable<FixedString4096Bytes>(
-        "",
-        NetworkVariableReadPermission.Everyone,
-        NetworkVariableWritePermission.Server
-    );
+    public NetworkVariable<int> AvatarId =
+        new NetworkVariable<int>(
+            readPerm: NetworkVariableReadPermission.Everyone,
+            writePerm: NetworkVariableWritePermission.Server
+        );
 
+    public Sprite defaultAvatar;
 
-    [Header("Punishment")]
-    public int points;
-    private int shotsUntilDeath;
+    private Texture2D ResizeTexture(Texture2D src, int width, int height)
+    {
+        RenderTexture rt = RenderTexture.GetTemporary(width, height);
+        Graphics.Blit(src, rt);
+
+        RenderTexture previous = RenderTexture.active;
+        RenderTexture.active = rt;
+
+        Texture2D newTex = new Texture2D(width, height);
+        newTex.ReadPixels(new Rect(0, 0, width, height), 0, 0);
+        newTex.Apply();
+
+        RenderTexture.active = previous;
+        RenderTexture.ReleaseTemporary(rt);
+
+        return newTex;
+    }
 
     public override void OnNetworkSpawn()
     {
         if (IsOwner)
-        {
-            SendNameToServer();
-            SendAvatarToServer();
-        }
-
-        AvatarBase64.OnValueChanged += OnAvatarChanged;
-
-        if (!string.IsNullOrEmpty(AvatarBase64.Value.ToString()))
-            OnAvatarChanged("", AvatarBase64.Value);
+            StartCoroutine(WaitForDatabaseAndUpload());
     }
 
-    void SendAvatarToServer()
+    private IEnumerator WaitForDatabaseAndUpload()
     {
-        Texture2D avatar = LobbyAvatarController.LoadSavedAvatar();
-        if (avatar == null)
-            return;
+        // Wait until AvatarDatabase exists and is spawned
+        while (AvatarDatabase.Instance == null || !AvatarDatabase.Instance.IsSpawned)
+            yield return null;
 
-        string base64 = System.Convert.ToBase64String(avatar.EncodeToPNG());
-        SetAvatarServerRpc(base64);
+        // Upload avatar
+        Texture2D avatarTex = LobbyAvatarController.LoadSavedAvatar();
+        if (avatarTex != null)
+        {
+            Texture2D smallTex = ResizeTexture(avatarTex, 32, 32);
+            byte[] compressed = smallTex.EncodeToJPG(10);
+            UploadAvatarServerRpc(compressed);
+        }
+
+        // Send player name
+        string savedName = PlayerPrefs.GetString("PlayerName", "Player");
+        SetPlayerNameServerRpc(savedName);
     }
 
     [ServerRpc(RequireOwnership = false)]
-    void SetAvatarServerRpc(string base64)
+    private void SetPlayerNameServerRpc(string name, ServerRpcParams rpcParams = default)
     {
-        AvatarBase64.Value = base64;
-    }
-    public Sprite GetAvatarSprite()
-    {
-        return cachedAvatarSprite != null
-            ? cachedAvatarSprite
-            : defaultAvatar;
+        PlayerName.Value = name;
     }
 
-    void OnAvatarChanged(FixedString4096Bytes oldValue, FixedString4096Bytes newValue)
+    [ServerRpc(RequireOwnership = false)]
+    private void UploadAvatarServerRpc(byte[] compressedAvatar, ServerRpcParams rpcParams = default)
     {
-        if (string.IsNullOrEmpty(newValue.ToString()))
-        {
-            cachedAvatarSprite = defaultAvatar;
-            return;
-        }
-
-        byte[] data = System.Convert.FromBase64String(newValue.ToString());
-
+        // Server creates sprite and adds it
         Texture2D tex = new Texture2D(2, 2);
-        tex.LoadImage(data);
+        tex.LoadImage(compressedAvatar);
+        Sprite sprite = Sprite.Create(tex, new Rect(0, 0, tex.width, tex.height), new Vector2(0.5f, 0.5f));
 
-        cachedAvatarSprite = Sprite.Create(
-            tex,
-            new Rect(0, 0, tex.width, tex.height),
-            new Vector2(0.5f, 0.5f)
-        );
+        int avatarId = AvatarDatabase.Instance.AddAvatar(sprite);
+        AvatarId.Value = avatarId;
+
+        // Send to all clients
+        UpdateClientsAvatarClientRpc(compressedAvatar, avatarId);
     }
 
+    [ClientRpc]
+    private void UpdateClientsAvatarClientRpc(byte[] compressedAvatar, int avatarId)
+    {
+        // Clients create sprite locally
+        Texture2D tex = new Texture2D(2, 2);
+        tex.LoadImage(compressedAvatar);
+        Sprite sprite = Sprite.Create(tex, new Rect(0, 0, tex.width, tex.height), new Vector2(0.5f, 0.5f));
 
+        AvatarDatabase.Instance.AddAvatar(sprite, avatarId);
+    }
+
+    public Sprite GetNetworkAvatar()
+    {
+        Sprite avatar = AvatarDatabase.Instance?.GetAvatar(AvatarId.Value);
+        return avatar != null ? avatar : defaultAvatar;
+    }
     [ClientRpc]
     public void SetTurnClientRpc(bool isMyTurn)
     {
@@ -99,19 +123,6 @@ public class Player : NetworkBehaviour
         {
             UIManager.Instance.SetPlayerTurn(isMyTurn);
         }
-    }
-
-    void SendNameToServer()
-    {
-        string savedName = PlayerPrefs.GetString("PlayerName", "Player");
-        SetPlayerNameServerRpc(savedName);
-    }
-
-    [ServerRpc(RequireOwnership = false)]
-    void SetPlayerNameServerRpc(string name, ServerRpcParams rpcParams = default)
-    {
-        PlayerName.Value = name;
-        Debug.Log($"Server set name for client {rpcParams.Receive.SenderClientId}: {name}");
     }
 
     public void AddCard(CardValue card)
@@ -130,6 +141,11 @@ public class Player : NetworkBehaviour
         {
             UIManager.Instance.AddCardToHand(card);
         }
+    }
+
+    public bool HasCardsInHand()
+    {
+        return hand.Count > 0;
     }
 
     public void ClearHand()
@@ -155,7 +171,7 @@ public class Player : NetworkBehaviour
         if (!IsServer) return;
 
         points = 0;
-        shotsUntilDeath = Random.Range(1, 7); // 1 to 6 inclusive
+        shotsUntilDeath = UnityEngine.Random.Range(1, 7);
 
         Debug.Log($"Initial chamber: {shotsUntilDeath} safe shots");
 

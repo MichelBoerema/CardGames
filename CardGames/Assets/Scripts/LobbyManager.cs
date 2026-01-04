@@ -119,26 +119,12 @@ public class LobbyManager : MonoBehaviour
             Image avatarImage = row.transform.Find("AvatarImage").GetComponent<Image>();
             Text nameText = row.transform.Find("PlayerNameText").GetComponent<Text>();
 
-            // Name
             nameText.text = player.PlayerName.Value.ToString();
 
-            // Avatar
-            Texture2D avatar = LobbyAvatarController.LoadSavedAvatar();
-
-            if (avatar != null && player.IsOwner)
-            {
-                avatarImage.sprite = Sprite.Create(
-                    avatar,
-                    new Rect(0, 0, avatar.width, avatar.height),
-                    new Vector2(0.5f, 0.5f)
-                );
-            }
-            else
-            {
-                avatarImage.sprite = player.defaultAvatar;
-            }
+            avatarImage.sprite = player.GetNetworkAvatar();
         }
     }
+
 
     public async void StartHost()
     {
@@ -219,8 +205,8 @@ public class LobbyManager : MonoBehaviour
         if (chosenName.Length > 16)
             chosenName = chosenName.Substring(0, 16);
 
-        PlayerPrefs.SetString("PlayerName", chosenName);
-        PlayerPrefs.Save();
+        //PlayerPrefs.SetString("PlayerName", chosenName);
+        //PlayerPrefs.Save();
 
         playerSetupRoot.SetActive(false);
         playerListRoot.SetActive(true);

@@ -111,28 +111,93 @@ public class BluffGamemanager : NetworkBehaviour
             ShowRoundTableRankClientRpc(currentTableRank);
         }
 
-        StartCoroutine(StartTurnAfterIntro());
-    }
-    IEnumerator StartTurnAfterIntro()
-    {
-        yield return new WaitForSeconds(3); // match animation duration
         StartTurn();
+        //StartCoroutine(StartTurnAfterIntro());
     }
 
     void StartTurn()
     {
         if (!IsServer) return;
 
+        int playersWithCards = GetPlayersWithCardsCount();
+
+        if (playersWithCards == 1)
+        {
+            int lastIndex = GetLastPlayerWithCardsIndex();
+            if (lastIndex != -1)
+            {
+                currentPlayerIndex = lastIndex;
+                ForceCallBluffClientRpc(players[lastIndex].OwnerClientId);
+            }
+            return;
+        }
+
+        int nextIndex = GetNextPlayerWithCards(currentPlayerIndex);
+        if (nextIndex == -1)
+            return;
+
+        currentPlayerIndex = nextIndex;
+
         for (int i = 0; i < players.Count; i++)
         {
-            bool isTurn = (i == currentPlayerIndex && players[i].IsAlive);
+            bool isTurn =
+                i == currentPlayerIndex &&
+                players[i].IsAlive &&
+                players[i].HasCardsInHand();
+
             players[i].SetTurnClientRpc(isTurn);
         }
     }
 
+    int GetPlayersWithCardsCount()
+    {
+        int count = 0;
+
+        foreach (var player in players)
+        {
+            if (player.IsAlive && player.HasCardsInHand())
+                count++;
+        }
+
+        return count;
+    }
+
+    int GetLastPlayerWithCardsIndex()
+    {
+        int index = -1;
+
+        for (int i = 0; i < players.Count; i++)
+        {
+            if (players[i].IsAlive && players[i].HasCardsInHand())
+            {
+                if (index != -1)
+                    return -1;
+
+                index = i;
+            }
+        }
+
+        return index;
+    }
+
+    int GetNextPlayerWithCards(int startIndex)
+    {
+        int index = startIndex;
+
+        for (int i = 0; i < players.Count; i++)
+        {
+            index = (index + 1) % players.Count;
+
+            if (players[index].IsAlive && players[index].HasCardsInHand())
+                return index;
+        }
+
+        return -1;
+    }
+
     void EndTurnServer()
     {
-        AdvanceToNextAlivePlayer();
+        StartTurn();
     }
 
     void AdvanceToNextAlivePlayer()
@@ -140,7 +205,7 @@ public class BluffGamemanager : NetworkBehaviour
         int nextIndex = GetNextAlivePlayerIndex(currentPlayerIndex);
         if (nextIndex == -1)
         {
-            EndGame();
+            //EndGame();
             return;
         }
 
@@ -165,6 +230,7 @@ public class BluffGamemanager : NetworkBehaviour
             cards.Length,
             currentTableRank
         );
+        ShowPlayedCardsPileClientRpc(cards.Length);
 
         EndTurnServer();
     }
@@ -237,17 +303,20 @@ public class BluffGamemanager : NetworkBehaviour
     {
         if (!IsServer) return;
 
-        foreach (Player player in players)
-        {
-            player.IsAlive = true;
-            player.InitializeRoulette();
-            player.ClearHand();
-        }
+        NetworkManager.SceneManager.LoadScene(
+            "BluffGame",
+            LoadSceneMode.Single
+        );
+    }
 
-        gameOver = false;
-        roundNumber = 0;
-        StartGameServer();
-        HideGameOverClientRpc();
+    public void GoBackToLobby()
+    {
+        if (!IsServer) return;
+
+        NetworkManager.SceneManager.LoadScene(
+            "Lobby",
+            LoadSceneMode.Single
+        );
     }
 
     // ===== ROUND START =====
@@ -279,6 +348,12 @@ public class BluffGamemanager : NetworkBehaviour
         UIManager.Instance?.UpdateLastClaims(playerName, amountClaimed, rank);
     }
 
+    [ClientRpc]
+    void ShowPlayedCardsPileClientRpc(int cardCount)
+    {
+        UIManager.Instance?.ShowPlayedCardsPile(cardCount);
+    }
+
     // ===== BLUFF REVEAL =====
     [ClientRpc]
     void ShowBluffRevealClientRpc(
@@ -287,6 +362,15 @@ public class BluffGamemanager : NetworkBehaviour
         TableRank rank)
     {
         UIManager.Instance?.ShowBluffReveal(playerName, cards, rank);
+    }
+
+    [ClientRpc]
+    void ForceCallBluffClientRpc(ulong targetClientId)
+    {
+        if (NetworkManager.Singleton.LocalClientId != targetClientId)
+            return;
+
+        UIManager.Instance?.ForceCallBluffOnly();
     }
 
     // ===== BLUFF RESULT =====
@@ -463,20 +547,33 @@ public class BluffGamemanager : NetworkBehaviour
 
     List<CardValue> GenerateDeck()
     {
-        List<CardValue> newDeck = new List<CardValue>();
-        int cardsPerType = 6;
+        List<CardValue> deck = new List<CardValue>();
 
-        for (int i = 0; i < cardsPerType; i++)
+        int cardsPerPlayer = 5;
+        int totalCardsNeeded = players.Count * cardsPerPlayer;
+
+        // Reserve 1 Joker minimum
+        int remainingCards = totalCardsNeeded - 1;
+
+        // Make remaining cards divisible by 3 (K/Q/A)
+        int baseSetSize = (remainingCards / 3) * 3;
+        int perTypeCount = baseSetSize / 3;
+
+        // Add equal Kings / Queens / Aces
+        for (int i = 0; i < perTypeCount; i++)
         {
-            newDeck.Add(CardValue.King);
-            newDeck.Add(CardValue.Queen);
-            newDeck.Add(CardValue.Ace);
+            deck.Add(CardValue.King);
+            deck.Add(CardValue.Queen);
+            deck.Add(CardValue.Ace);
         }
 
-        newDeck.Add(CardValue.Joker);
-        newDeck.Add(CardValue.Joker);
+        // Add Jokers to fill the rest (at least 1)
+        while (deck.Count < totalCardsNeeded)
+        {
+            deck.Add(CardValue.Joker);
+        }
 
-        return newDeck;
+        return deck;
     }
 
     void ShuffleDeck(List<CardValue> deck)
