@@ -54,28 +54,31 @@ public class Player : NetworkBehaviour
     public override void OnNetworkSpawn()
     {
         if (IsOwner)
-            StartCoroutine(WaitForDatabaseAndUpload());
+            StartCoroutine(UploadAvatarWhenReady());
     }
 
-    private IEnumerator WaitForDatabaseAndUpload()
+    private IEnumerator UploadAvatarWhenReady()
     {
-        // Wait until AvatarDatabase exists and is spawned
         while (AvatarDatabase.Instance == null || !AvatarDatabase.Instance.IsSpawned)
             yield return null;
 
-        // Upload avatar
         Texture2D avatarTex = LobbyAvatarController.LoadSavedAvatar();
-        if (avatarTex != null)
-        {
-            Texture2D smallTex = ResizeTexture(avatarTex, 32, 32);
-            byte[] compressed = smallTex.EncodeToJPG(10);
-            UploadAvatarServerRpc(compressed);
-        }
+        if (avatarTex == null)
+            yield break;
 
-        // Send player name
-        string savedName = PlayerPrefs.GetString("PlayerName", "Player");
-        SetPlayerNameServerRpc(savedName);
+        Texture2D small = ResizeTexture(avatarTex, 32, 32);
+        byte[] compressed = small.EncodeToJPG(10);
+
+        UploadAvatarServerRpc(compressed);
     }
+
+    [ServerRpc(RequireOwnership = false)]
+    private void UploadAvatarServerRpc(byte[] compressedAvatar)
+    {
+        int id = AvatarDatabase.Instance.AddAvatar(compressedAvatar);
+        AvatarId.Value = id;
+    }
+
 
     [ServerRpc(RequireOwnership = false)]
     private void SetPlayerNameServerRpc(string name, ServerRpcParams rpcParams = default)
@@ -83,31 +86,16 @@ public class Player : NetworkBehaviour
         PlayerName.Value = name;
     }
 
-    [ServerRpc(RequireOwnership = false)]
-    private void UploadAvatarServerRpc(byte[] compressedAvatar, ServerRpcParams rpcParams = default)
-    {
-        // Server creates sprite and adds it
-        Texture2D tex = new Texture2D(2, 2);
-        tex.LoadImage(compressedAvatar);
-        Sprite sprite = Sprite.Create(tex, new Rect(0, 0, tex.width, tex.height), new Vector2(0.5f, 0.5f));
+    //[ClientRpc]
+    //private void UpdateClientsAvatarClientRpc(byte[] compressedAvatar, int avatarId)
+    //{
+    //    // Clients create sprite locally
+    //    Texture2D tex = new Texture2D(2, 2);
+    //    tex.LoadImage(compressedAvatar);
+    //    Sprite sprite = Sprite.Create(tex, new Rect(0, 0, tex.width, tex.height), new Vector2(0.5f, 0.5f));
 
-        int avatarId = AvatarDatabase.Instance.AddAvatar(sprite);
-        AvatarId.Value = avatarId;
-
-        // Send to all clients
-        UpdateClientsAvatarClientRpc(compressedAvatar, avatarId);
-    }
-
-    [ClientRpc]
-    private void UpdateClientsAvatarClientRpc(byte[] compressedAvatar, int avatarId)
-    {
-        // Clients create sprite locally
-        Texture2D tex = new Texture2D(2, 2);
-        tex.LoadImage(compressedAvatar);
-        Sprite sprite = Sprite.Create(tex, new Rect(0, 0, tex.width, tex.height), new Vector2(0.5f, 0.5f));
-
-        AvatarDatabase.Instance.AddAvatar(sprite, avatarId);
-    }
+    //    AvatarDatabase.Instance.AddAvatar(sprite, avatarId);
+    //}
 
     public Sprite GetNetworkAvatar()
     {

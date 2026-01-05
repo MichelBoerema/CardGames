@@ -6,8 +6,9 @@ public class AvatarDatabase : NetworkBehaviour
 {
     public static AvatarDatabase Instance { get; private set; }
 
-    // Local list of sprites; synced using NetworkList of IDs if needed
-    [SerializeField] private readonly List<Sprite> avatars = new List<Sprite>();
+    // Server-authoritative storage
+    private readonly Dictionary<int, byte[]> avatarData = new();
+    private readonly List<Sprite> avatars = new();
 
     void Awake()
     {
@@ -21,32 +22,72 @@ public class AvatarDatabase : NetworkBehaviour
         DontDestroyOnLoad(gameObject);
     }
 
-    /// <summary>
-    /// Adds an avatar on the server and returns its ID
-    /// </summary>
-    public int AddAvatar(Sprite sprite)
+    public override void OnNetworkSpawn()
     {
-        if (!IsServer)
-            throw new System.Exception("Only the server can add avatars");
-
-        avatars.Add(sprite);
-        return avatars.Count - 1;
+        if (IsServer)
+        {
+            NetworkManager.OnClientConnectedCallback += OnClientConnected;
+        }
     }
 
-    /// <summary>
-    /// Adds an avatar at a specific ID (for clients to mirror server data)
-    /// </summary>
-    public void AddAvatar(Sprite sprite, int id)
+    private void OnClientConnected(ulong clientId)
     {
+        // Send ALL existing avatars to the newly connected client
+        foreach (var pair in avatarData)
+        {
+            SendAvatarToClientRpc(pair.Value, pair.Key,
+                new ClientRpcParams
+                {
+                    Send = new ClientRpcSendParams
+                    {
+                        TargetClientIds = new[] { clientId }
+                    }
+                });
+        }
+    }
+
+    // SERVER ONLY
+    public int AddAvatar(byte[] compressedAvatar)
+    {
+        if (!IsServer)
+            throw new System.Exception("Only server can add avatars");
+
+        Texture2D tex = new Texture2D(2, 2);
+        tex.LoadImage(compressedAvatar);
+        Sprite sprite = Sprite.Create(
+            tex,
+            new Rect(0, 0, tex.width, tex.height),
+            new Vector2(0.5f, 0.5f)
+        );
+
+        int id = avatars.Count;
+        avatars.Add(sprite);
+        avatarData[id] = compressedAvatar;
+
+        // Broadcast to all current clients
+        SendAvatarToClientRpc(compressedAvatar, id);
+
+        return id;
+    }
+
+    [ClientRpc]
+    private void SendAvatarToClientRpc(byte[] compressedAvatar, int id, ClientRpcParams rpcParams = default)
+    {
+        Texture2D tex = new Texture2D(2, 2);
+        tex.LoadImage(compressedAvatar);
+
+        Sprite sprite = Sprite.Create(
+            tex,
+            new Rect(0, 0, tex.width, tex.height),
+            new Vector2(0.5f, 0.5f)
+        );
+
         while (avatars.Count <= id)
             avatars.Add(null);
 
         avatars[id] = sprite;
     }
 
-    /// <summary>
-    /// Get an avatar by ID
-    /// </summary>
     public Sprite GetAvatar(int id)
     {
         if (id < 0 || id >= avatars.Count)
