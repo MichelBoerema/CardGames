@@ -22,6 +22,16 @@ public class LobbyManager : MonoBehaviour
     public Text joinCodeDisplay;
     public GameObject playerSetupRoot;
 
+    [Header("Flow Buttons")]
+    public Button createRoomButton;
+    public Button joinRoomButton;
+    public Button continueButton;
+    public Button joinContinueButton; // NEW
+
+    [Header("Player Setup UI")]
+    public GameObject playerSetupButtonsRoot; // name + avatar + continue
+    public GameObject joinCodeConfirmButton;  // button that calls JoinGame
+
     [Header("Player List UI")]
     public Transform playerListParent;
     public GameObject playerListRoot;
@@ -50,20 +60,26 @@ public class LobbyManager : MonoBehaviour
         hostButton.interactable = false;
         joinButton.interactable = false;
         startGameButton.interactable = false;
-        startGameButtonRoot.SetActive(false);
 
         StartCoroutine(WaitForServices());
 
-        hostButton.onClick.AddListener(StartHost);
-        joinButton.onClick.AddListener(JoinGame);
-        startGameButton.onClick.AddListener(StartGame);
+        createRoomButton.onClick.AddListener(OnCreateRoomSelected);
+        joinRoomButton.onClick.AddListener(OnJoinRoomSelected);
+        continueButton.onClick.AddListener(StartHost);
+        joinContinueButton.onClick.AddListener(OnJoinContinuePressed);
+        joinCodeConfirmButton.GetComponent<Button>().onClick.AddListener(JoinGame);
 
         NetworkManager.Singleton.OnClientConnectedCallback += OnClientConnected;
         NetworkManager.Singleton.OnClientDisconnectCallback += OnClientDisconnected;
 
-        joinCodeInputRoot.SetActive(true);
-        joinCodeDisplayRoot.SetActive(false);
+        // INITIAL UI STATE
+        playerSetupRoot.SetActive(false);
+        joinCodeInputRoot.SetActive(false);
+        joinCodeConfirmButton.SetActive(false);
+        joinContinueButton.gameObject.SetActive(false);
+        playerListRoot.SetActive(false);
     }
+
     IEnumerator WaitForServices()
     {
         while (UnityServicesManager.Instance == null ||
@@ -84,6 +100,42 @@ public class LobbyManager : MonoBehaviour
 
         NetworkManager.Singleton.OnClientConnectedCallback -= OnClientConnected;
         NetworkManager.Singleton.OnClientDisconnectCallback -= OnClientDisconnected;
+    }
+
+    void OnCreateRoomSelected()
+    {
+        createRoomButton.gameObject.SetActive(false);
+        joinRoomButton.gameObject.SetActive(false);
+        playerSetupRoot.SetActive(true);
+        joinCodeInputRoot.SetActive(false);
+        joinCodeConfirmButton.SetActive(false);
+
+        continueButton.gameObject.SetActive(true);
+    }
+
+    void OnJoinRoomSelected()
+    {
+        createRoomButton.gameObject.SetActive(false);
+        joinRoomButton.gameObject.SetActive(false);
+
+        playerSetupRoot.SetActive(true);
+
+        // Join step 1
+        joinCodeInputRoot.SetActive(false);
+        joinCodeConfirmButton.SetActive(false);
+
+        continueButton.gameObject.SetActive(false);
+        joinContinueButton.gameObject.SetActive(true);
+    }
+
+    void OnJoinContinuePressed()
+    {
+        // Join step 2
+        joinCodeInputRoot.SetActive(true);
+        joinCodeConfirmButton.SetActive(true);
+
+        joinContinueButton.gameObject.SetActive(false);
+        playerSetupRoot.SetActive(false);
     }
 
     void OnClientConnected(ulong clientId)
@@ -125,6 +177,19 @@ public class LobbyManager : MonoBehaviour
         }
     }
 
+    public void RequestPlayerListRefresh()
+    {
+        StopAllCoroutines();
+        StartCoroutine(DelayedPlayerListRefresh());
+    }
+
+    private IEnumerator DelayedPlayerListRefresh()
+    {
+        // Wait one frame to ensure NetworkObjects are ready
+        yield return null;
+
+        UpdatePlayerList();
+    }
 
     public async void StartHost()
     {
@@ -155,6 +220,10 @@ public class LobbyManager : MonoBehaviour
         clientGameButtonRoot.SetActive(false);
 
         joinCodeDisplay.text = $"{joinCode}";
+
+        continueButton.gameObject.SetActive(false);
+
+        UpdatePlayerList();
     }
 
     public async void JoinGame()
@@ -193,6 +262,9 @@ public class LobbyManager : MonoBehaviour
 
         joinCodeDisplay.text = $"{joinCode}";
 
+        joinContinueButton.gameObject.SetActive(false);
+
+        UpdatePlayerList();
     }
 
     public void ChooseName()
@@ -222,4 +294,6 @@ public class LobbyManager : MonoBehaviour
             NetworkManager.Singleton.SceneManager.LoadScene("BluffGame", UnityEngine.SceneManagement.LoadSceneMode.Single);
         }
     }
+
+
 }

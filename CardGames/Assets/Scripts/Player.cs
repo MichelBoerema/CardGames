@@ -54,7 +54,22 @@ public class Player : NetworkBehaviour
     public override void OnNetworkSpawn()
     {
         if (IsOwner)
-            StartCoroutine(UploadAvatarWhenReady());
+        {
+            UploadPlayerName();
+            StartCoroutine(UploadAvatarWhenReady()); 
+        }
+
+        base.OnNetworkSpawn();
+
+        // Rebuild player list when a player appears
+        if (LobbyManager.Instance != null)
+        {
+            LobbyManager.Instance.RequestPlayerListRefresh();
+        }
+
+        // Listen for name/avatar changes
+        PlayerName.OnValueChanged += OnPlayerDataChanged;
+        AvatarId.OnValueChanged += OnAvatarChanged;
     }
 
     private IEnumerator UploadAvatarWhenReady()
@@ -79,6 +94,18 @@ public class Player : NetworkBehaviour
         AvatarId.Value = id;
     }
 
+    private void UploadPlayerName()
+    {
+        string chosenName = PlayerPrefs.GetString("PlayerName", "Player");
+
+        if (string.IsNullOrEmpty(chosenName))
+            chosenName = "Player";
+
+        if (chosenName.Length > 16)
+            chosenName = chosenName.Substring(0, 16);
+
+        SetPlayerNameServerRpc(chosenName);
+    }
 
     [ServerRpc(RequireOwnership = false)]
     private void SetPlayerNameServerRpc(string name, ServerRpcParams rpcParams = default)
@@ -86,22 +113,22 @@ public class Player : NetworkBehaviour
         PlayerName.Value = name;
     }
 
-    //[ClientRpc]
-    //private void UpdateClientsAvatarClientRpc(byte[] compressedAvatar, int avatarId)
-    //{
-    //    // Clients create sprite locally
-    //    Texture2D tex = new Texture2D(2, 2);
-    //    tex.LoadImage(compressedAvatar);
-    //    Sprite sprite = Sprite.Create(tex, new Rect(0, 0, tex.width, tex.height), new Vector2(0.5f, 0.5f));
-
-    //    AvatarDatabase.Instance.AddAvatar(sprite, avatarId);
-    //}
-
     public Sprite GetNetworkAvatar()
     {
         Sprite avatar = AvatarDatabase.Instance?.GetAvatar(AvatarId.Value);
         return avatar != null ? avatar : defaultAvatar;
     }
+
+    private void OnPlayerDataChanged(FixedString32Bytes oldVal, FixedString32Bytes newVal)
+    {
+        LobbyManager.Instance?.RequestPlayerListRefresh();
+    }
+
+    private void OnAvatarChanged(int oldVal, int newVal)
+    {
+        LobbyManager.Instance?.RequestPlayerListRefresh();
+    }
+
     [ClientRpc]
     public void SetTurnClientRpc(bool isMyTurn)
     {
