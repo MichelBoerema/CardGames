@@ -20,8 +20,6 @@ public enum TableRank
     Ace
 }
 
-
-
 public class BluffGamemanager : NetworkBehaviour
 {
     // Singleton
@@ -258,8 +256,6 @@ public class BluffGamemanager : NetworkBehaviour
 
     IEnumerator ResolveBluffSequence()
     {
-        yield return new WaitForSeconds(bluffRevealDuration);
-
         int punishedIndex = DeterminePunishedPlayer();
         Player punishedPlayer = players[punishedIndex];
 
@@ -273,19 +269,7 @@ public class BluffGamemanager : NetworkBehaviour
             survived
         );
 
-        yield return new WaitForSeconds(bluffTotalAnimationTime);
-
-        // NOW decide game state
-        if (!survived && GetAlivePlayerCount() <= 1 && UIManager.Instance.isPopupLocked == false)
-        {
-            EndGame();
-            yield break;
-        }
-
-        ResetRoundStateOnly();
-        StartGameServer();
-
-        isResolvingBluff = false;
+        yield break;
     }
 
     public void EndGame()
@@ -388,6 +372,30 @@ public class BluffGamemanager : NetworkBehaviour
         UIManager.Instance.ShowBluffRevealSequence(player, cards, rank, survived);
     }
 
+    [ServerRpc(RequireOwnership = false)]
+    public void BluffAnimationFinishedServerRpc()
+    {
+        if (!isResolvingBluff)
+            return;
+
+        ContinueAfterBluffServer();
+    }
+
+    void ContinueAfterBluffServer()
+    {
+        if (!IsServer) return;
+
+        if (GetAlivePlayerCount() <= 1)
+        {
+            EndGame();
+            return;
+        }
+
+        ResetRoundStateOnly();
+        isResolvingBluff = false;
+        StartGameServer();
+    }
+
     // ===== GAME OVER =====
     [ClientRpc]
     void EndGameClientRpc(FixedString32Bytes winnerName)
@@ -462,9 +470,12 @@ public class BluffGamemanager : NetworkBehaviour
     {
         if (!IsServer) return;
 
-        int aliveCount = GetAlivePlayerCount();
+        Debug.Log("Player died during bluff resolution");
 
-        Debug.Log($"Alive players remaining: {aliveCount}");
+        if (isResolvingBluff)
+            return;
+
+        int aliveCount = GetAlivePlayerCount();
 
         if (aliveCount <= 1)
         {
@@ -472,7 +483,6 @@ public class BluffGamemanager : NetworkBehaviour
             return;
         }
 
-        // If the dead player was the current turn holder, move on
         if (players[currentPlayerIndex] == player)
         {
             AdvanceToNextAlivePlayer();

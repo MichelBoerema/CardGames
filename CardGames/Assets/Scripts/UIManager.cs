@@ -54,6 +54,7 @@ public class UIManager : MonoBehaviour
     [SerializeField] private float preRoundIntroDuration = 3f;
 
     [Header("Table Rank Title")]
+    [SerializeField] private GameObject originalTableRankText;
     public Text tableRankTitleText;
     public GameObject panelTableRank;
     public Animator tableRankTitleAnimator;
@@ -261,7 +262,7 @@ public class UIManager : MonoBehaviour
         yield return new WaitForSeconds(4f);
 
         ShowTableRankPopup(rank);
-        yield return new WaitForSeconds(2.5f);
+        yield return new WaitForSeconds(2f);
 
         HidePopup();
     }
@@ -306,6 +307,7 @@ public class UIManager : MonoBehaviour
         while (isPopupLocked)
             yield return null;
 
+        originalTableRankText.SetActive(false);
         infoPopup.SetActive(false);
         ClearSpawnedCards();
 
@@ -318,9 +320,10 @@ public class UIManager : MonoBehaviour
             tableRankTitleAnimator.SetTrigger("ZoomOut");
         }
 
-        yield return new WaitForSeconds(2.5f);
+        yield return new WaitForSeconds(1.5f);
 
         panelTableRank.SetActive(false);
+        originalTableRankText.SetActive(true);
         HidePopup();
     }
 
@@ -386,7 +389,7 @@ public class UIManager : MonoBehaviour
             rank
         );
 
-        yield return new WaitForSeconds(0.5f);
+        yield return new WaitForSeconds(2.5f);
 
         ClearSpawnedCards();
         descriptionText.text = "";
@@ -448,10 +451,11 @@ public class UIManager : MonoBehaviour
         }
 
         yield return new WaitForSeconds(2f);
+
         ClearPlayedCardsPile();
 
+        BluffGamemanager.Instance.BluffAnimationFinishedServerRpc();
     }
-
 
     public void ShowBluffReveal(
     FixedString32Bytes playerName,
