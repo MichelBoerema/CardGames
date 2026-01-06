@@ -56,7 +56,12 @@ public class Player : NetworkBehaviour
         if (IsOwner)
         {
             UploadPlayerName();
-            StartCoroutine(UploadAvatarWhenReady()); 
+            StartCoroutine(UploadAvatarWhenReady());
+
+            if (UIManager.Instance != null)
+            {
+                UIManager.Instance.SetLocalPlayer(this);
+            }
         }
 
         base.OnNetworkSpawn();
@@ -179,6 +184,11 @@ public class Player : NetworkBehaviour
         {
             UIManager.Instance.ClearHandUI();
         }
+    }
+
+    public int GetCardsInHandCount()
+    {
+        return hand.Count;
     }
 
     public void InitializeRoulette()

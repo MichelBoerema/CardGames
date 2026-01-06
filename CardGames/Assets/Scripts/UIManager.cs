@@ -22,10 +22,18 @@ public class UIManager : MonoBehaviour
     [Header("Hand UI")]
     public Transform handUIParent;
     public GameObject cardButtonPrefab;
+    private const int MAX_SELECTED_CARDS = 3;
 
     [Header("Game UI")]
     public Text tableRankText;
     public Text lastClaims;
+
+    [Header("Next Player Info UI")]
+    public GameObject nextPlayerInfoPanel;
+    public Image nextPlayerAvatarImage;
+    public Text nextPlayerNameText;
+    public Text nextPlayerCardsLeftText;
+    [SerializeField] private Sprite fallbackAvatar;
 
     [Header("Popup")]
     public GameObject infoPopup;
@@ -34,6 +42,7 @@ public class UIManager : MonoBehaviour
     public Transform cardSpawnParent;
     public GameObject uiCardPrefab;
     public bool isPopupLocked = false;
+
     [Header("Title Animation")]
     public Animator titleAnimator;
 
@@ -135,10 +144,22 @@ public class UIManager : MonoBehaviour
             Destroy(card.gameObject);
         }
 
+        // Clear the selected cards list
         selectedCards.Clear();
 
+        // Remove these cards from the local player's hand
+        if (localPlayer != null)
+        {
+            foreach (CardValue cv in playedValues)
+            {
+                localPlayer.hand.Remove(cv);
+            }
+        }
+
+        // Send played cards to server
         BluffGamemanager.Instance.PlayCardsServerRpc(playedValues.ToArray());
     }
+
     public void CallBluff()
     {
         BluffGamemanager.Instance.CallBluffServerRpc();
@@ -203,14 +224,36 @@ public class UIManager : MonoBehaviour
     {
         if (card.IsSelected)
         {
-            if (!selectedCards.Contains(card))
-                selectedCards.Add(card);
+            if (selectedCards.Count >= MAX_SELECTED_CARDS)
+            {
+                card.SetSelected(false);
+                return;
+            }
+
+            selectedCards.Add(card);
         }
         else
         {
             selectedCards.Remove(card);
         }
+
+        UpdateCardInteractability();
     }
+
+    void UpdateCardInteractability()
+    {
+        bool canSelectMore = selectedCards.Count < MAX_SELECTED_CARDS;
+
+        foreach (Transform child in handUIParent)
+        {
+            Card card = child.GetComponent<Card>();
+            if (card == null) continue;
+
+            if (!card.IsSelected)
+                card.SetInteractable(canSelectMore);
+        }
+    }
+
     public List<Card> GetSelectedCards()
     {
         return selectedCards;
@@ -227,12 +270,12 @@ public class UIManager : MonoBehaviour
     public void ClearHandUI()
     {
         foreach (Transform child in handUIParent)
-        {
             Destroy(child.gameObject);
-        }
 
         ClearSelection();
+        UpdateCardInteractability();
     }
+
     #endregion
 
     #region Popups
@@ -526,5 +569,23 @@ public class UIManager : MonoBehaviour
     {
         lastClaims.text = $"{PlayerName}\n claims \n{amountClaimed}X {currentTableRank}";
     }
+
+    public void UpdateNextPlayerInfo(
+    FixedString32Bytes playerName,
+    int avatarId,
+    int cardsLeft
+)
+    {
+        nextPlayerInfoPanel.SetActive(true);
+
+        nextPlayerNameText.text = playerName.ToString();
+        nextPlayerCardsLeftText.text = cardsLeft.ToString();
+
+        Sprite avatar = AvatarDatabase.Instance?.GetAvatar(avatarId);
+        nextPlayerAvatarImage.sprite = avatar != null
+            ? avatar
+            : fallbackAvatar;
+    }
+
     #endregion
 }

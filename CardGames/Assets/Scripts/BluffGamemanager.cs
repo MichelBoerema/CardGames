@@ -117,22 +117,39 @@ public class BluffGamemanager : NetworkBehaviour
     {
         if (!IsServer) return;
 
-        int playersWithCards = GetPlayersWithCardsCount();
+        List<int> playersWithCards = new();
 
-        if (playersWithCards == 1)
+        for (int i = 0; i < players.Count; i++)
         {
-            int lastIndex = GetLastPlayerWithCardsIndex();
-            if (lastIndex != -1)
+            if (players[i].IsAlive && players[i].HasCardsInHand())
+                playersWithCards.Add(i);
+        }
+
+        if (playersWithCards.Count == 1)
+        {
+            int lastIndex = playersWithCards[0];
+            currentPlayerIndex = lastIndex;
+
+            for (int i = 0; i < players.Count; i++)
             {
-                currentPlayerIndex = lastIndex;
-                ForceCallBluffClientRpc(players[lastIndex].OwnerClientId);
+                players[i].SetTurnClientRpc(false);
             }
+
+            ForceCallBluffClientRpc(players[lastIndex].OwnerClientId);
+            return;
+        }
+
+        if (playersWithCards.Count == 0)
+        {
+            Debug.LogWarning("No players with cards left!");
             return;
         }
 
         int nextIndex = GetNextPlayerWithCards(currentPlayerIndex);
         if (nextIndex == -1)
             return;
+
+        Player lastPlayer = players[currentPlayerIndex];
 
         currentPlayerIndex = nextIndex;
 
@@ -147,36 +164,36 @@ public class BluffGamemanager : NetworkBehaviour
         }
     }
 
-    int GetPlayersWithCardsCount()
-    {
-        int count = 0;
+    //int GetPlayersWithCardsCount()
+    //{
+    //    int count = 0;
 
-        foreach (var player in players)
-        {
-            if (player.IsAlive && player.HasCardsInHand())
-                count++;
-        }
+    //    foreach (var player in players)
+    //    {
+    //        if (player.IsAlive && player.HasCardsInHand())
+    //            count++;
+    //    }
 
-        return count;
-    }
+    //    return count;
+    //}
 
-    int GetLastPlayerWithCardsIndex()
-    {
-        int index = -1;
+    //int GetLastPlayerWithCardsIndex()
+    //{
+    //    int index = -1;
 
-        for (int i = 0; i < players.Count; i++)
-        {
-            if (players[i].IsAlive && players[i].HasCardsInHand())
-            {
-                if (index != -1)
-                    return -1;
+    //    for (int i = 0; i < players.Count; i++)
+    //    {
+    //        if (players[i].IsAlive && players[i].HasCardsInHand())
+    //        {
+    //            if (index != -1)
+    //                return -1;
 
-                index = i;
-            }
-        }
+    //            index = i;
+    //        }
+    //    }
 
-        return index;
-    }
+    //    return index;
+    //}
 
     int GetNextPlayerWithCards(int startIndex)
     {
@@ -219,15 +236,24 @@ public class BluffGamemanager : NetworkBehaviour
         if (player.OwnerClientId != rpcParams.Receive.SenderClientId)
             return;
 
+        // Remove cards from the server's authoritative hand
+        foreach (var cv in cards)
+        {
+            player.hand.Remove(cv);
+        }
+
+        ShowLastPlayedPlayerInfoClientRpc(
+        player.PlayerName.Value,
+        player.AvatarId.Value,
+        player.hand.Count
+        );
+
+        // Proceed with other gameplay logic
         lastPlayedPlayerIndex = currentPlayerIndex;
         laatsteGespeeldeKaarten.Clear();
         laatsteGespeeldeKaarten.AddRange(cards);
 
-        UpdateLastClaimsClientRpc(
-            player.PlayerName.Value,
-            cards.Length,
-            currentTableRank
-        );
+        UpdateLastClaimsClientRpc(player.PlayerName.Value, cards.Length, currentTableRank);
         ShowPlayedCardsPileClientRpc(cards.Length);
 
         EndTurnServer();
@@ -330,6 +356,19 @@ public class BluffGamemanager : NetworkBehaviour
         TableRank rank)
     {
         UIManager.Instance?.UpdateLastClaims(playerName, amountClaimed, rank);
+    }
+
+    [ClientRpc]
+    void ShowLastPlayedPlayerInfoClientRpc(
+    FixedString32Bytes playerName,
+    int avatarId,
+    int cardsLeft
+)
+    {
+        if (UIManager.Instance == null)
+            return;
+
+        UIManager.Instance.UpdateNextPlayerInfo(playerName, avatarId, cardsLeft);
     }
 
     [ClientRpc]
