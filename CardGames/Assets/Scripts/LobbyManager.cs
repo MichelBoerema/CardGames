@@ -8,6 +8,7 @@ using Unity.Services.Relay.Models;
 using Unity.Netcode.Transports.UTP;
 using Unity.Networking.Transport.Relay;
 using System.Collections;
+using Unity.Collections;
 
 
 public class LobbyManager : MonoBehaviour
@@ -26,11 +27,25 @@ public class LobbyManager : MonoBehaviour
     public Button createRoomButton;
     public Button joinRoomButton;
     public Button continueButton;
-    public Button joinContinueButton; // NEW
+    public Button joinContinueButton;
+    public Button backToRoomSelectionButton;
+    public Button ClientBackToPlayerSetupButton;
+
+    [Header("Hard Back Button")]
+    public Button reloadLobbyButton;
 
     [Header("Player Setup UI")]
     public GameObject playerSetupButtonsRoot; // name + avatar + continue
     public GameObject joinCodeConfirmButton;  // button that calls JoinGame
+
+    [Header("Scene Selection")]
+    public Dropdown sceneDropdown;
+    private NetworkVariable<FixedString32Bytes> selectedScene =
+    new NetworkVariable<FixedString32Bytes>(
+        "BluffGame",
+        NetworkVariableReadPermission.Everyone,
+        NetworkVariableWritePermission.Server
+    );
 
     [Header("Player List UI")]
     public Transform playerListParent;
@@ -48,6 +63,7 @@ public class LobbyManager : MonoBehaviour
     public GameObject startGameButtonRoot;
     public GameObject hostGameButtonRoot;
     public GameObject clientGameButtonRoot;
+    
 
     void Awake()
     {
@@ -67,6 +83,9 @@ public class LobbyManager : MonoBehaviour
         joinRoomButton.onClick.AddListener(OnJoinRoomSelected);
         continueButton.onClick.AddListener(StartHost);
         joinContinueButton.onClick.AddListener(OnJoinContinuePressed);
+        backToRoomSelectionButton.onClick.AddListener(OnBackToRoomSelectionSelected);
+        ClientBackToPlayerSetupButton.onClick.AddListener(OnClientBackToPlayerSetupSelected);
+        reloadLobbyButton.onClick.AddListener(ReloadLobbyScene);
         joinCodeConfirmButton.GetComponent<Button>().onClick.AddListener(JoinGame);
 
         NetworkManager.Singleton.OnClientConnectedCallback += OnClientConnected;
@@ -78,6 +97,7 @@ public class LobbyManager : MonoBehaviour
         joinCodeConfirmButton.SetActive(false);
         joinContinueButton.gameObject.SetActive(false);
         playerListRoot.SetActive(false);
+        reloadLobbyButton.gameObject.SetActive(false);
     }
 
     IEnumerator WaitForServices()
@@ -111,6 +131,7 @@ public class LobbyManager : MonoBehaviour
         joinCodeConfirmButton.SetActive(false);
 
         continueButton.gameObject.SetActive(true);
+        backToRoomSelectionButton.gameObject.SetActive(true);
     }
 
     void OnJoinRoomSelected()
@@ -126,6 +147,40 @@ public class LobbyManager : MonoBehaviour
 
         continueButton.gameObject.SetActive(false);
         joinContinueButton.gameObject.SetActive(true);
+        backToRoomSelectionButton.gameObject.SetActive(true);
+    }
+
+    void OnBackToRoomSelectionSelected()
+    {
+        createRoomButton.gameObject.SetActive(true);
+        joinRoomButton.gameObject.SetActive(true);
+
+        playerSetupRoot.SetActive(false);
+        continueButton.gameObject.SetActive(false);
+        joinContinueButton.gameObject.SetActive(false);
+
+        backToRoomSelectionButton.gameObject.SetActive(false);
+    }
+    void OnClientBackToPlayerSetupSelected()
+    {
+        OnJoinRoomSelected();
+
+        ClientBackToPlayerSetupButton.gameObject.SetActive(false);
+    }
+
+    public void ReloadLobbyScene()
+    {
+        Debug.Log("Reloading lobby scene");
+
+        if (NetworkManager.Singleton != null)
+        {
+            if (NetworkManager.Singleton.IsListening)
+            {
+                NetworkManager.Singleton.Shutdown();
+            }
+        }
+
+        SceneManager.LoadScene(SceneManager.GetActiveScene().name);
     }
 
     void OnJoinContinuePressed()
@@ -136,6 +191,9 @@ public class LobbyManager : MonoBehaviour
 
         joinContinueButton.gameObject.SetActive(false);
         playerSetupRoot.SetActive(false);
+
+        backToRoomSelectionButton.gameObject.SetActive(false);
+        ClientBackToPlayerSetupButton.gameObject.SetActive(true);
     }
 
     void OnClientConnected(ulong clientId)
@@ -209,6 +267,12 @@ public class LobbyManager : MonoBehaviour
 
         ChooseName();
 
+        sceneDropdown.gameObject.SetActive(true);
+        sceneDropdown.onValueChanged.AddListener(OnSceneDropdownChanged);
+
+        // Initialize with current value
+        OnSceneDropdownChanged(sceneDropdown.value);
+
         hostButton.interactable = false;
         joinButton.interactable = false;
 
@@ -222,8 +286,21 @@ public class LobbyManager : MonoBehaviour
         joinCodeDisplay.text = $"{joinCode}";
 
         continueButton.gameObject.SetActive(false);
+        backToRoomSelectionButton.gameObject.SetActive(false);
+        reloadLobbyButton.gameObject.SetActive(true);
 
         UpdatePlayerList();
+    }
+
+    void OnSceneDropdownChanged(int index)
+    {
+        if (!NetworkManager.Singleton.IsServer)
+            return;
+
+        string sceneName = sceneDropdown.options[index].text;
+        selectedScene.Value = sceneName;
+
+        Debug.Log($"Selected scene: {sceneName}");
     }
 
     public async void JoinGame()
@@ -259,10 +336,13 @@ public class LobbyManager : MonoBehaviour
         joinCodeDisplayRoot.SetActive(true);
         hostGameButtonRoot.SetActive(false);
         clientGameButtonRoot.SetActive(false);
+        sceneDropdown.gameObject.SetActive(false);
 
         joinCodeDisplay.text = $"{joinCode}";
 
         joinContinueButton.gameObject.SetActive(false);
+        ClientBackToPlayerSetupButton.gameObject.SetActive(false);
+        reloadLobbyButton.gameObject.SetActive(true);
 
         UpdatePlayerList();
     }
@@ -288,12 +368,16 @@ public class LobbyManager : MonoBehaviour
 
     public void StartGame()
     {
-        if (NetworkManager.Singleton.IsServer)
-        {
-            // Switch to Game Scene for all clients
-            NetworkManager.Singleton.SceneManager.LoadScene("BluffGame", UnityEngine.SceneManagement.LoadSceneMode.Single);
-        }
+        if (!NetworkManager.Singleton.IsServer)
+            return;
+
+        string sceneToLoad = selectedScene.Value.ToString();
+
+        Debug.Log($"Loading scene: {sceneToLoad}");
+
+        NetworkManager.Singleton.SceneManager.LoadScene(
+            sceneToLoad,
+            LoadSceneMode.Single
+        );
     }
-
-
 }

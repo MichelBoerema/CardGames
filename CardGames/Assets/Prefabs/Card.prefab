@@ -33,7 +33,6 @@ RectTransform:
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
-  - {fileID: 6009307334619232197}
   - {fileID: 6839714255142822504}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
@@ -63,7 +62,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   m_Material: {fileID: 0}
-  m_Color: {r: 1, g: 1, b: 1, a: 1}
+  m_Color: {r: 1, g: 1, b: 1, a: 0}
   m_RaycastTarget: 1
   m_RaycastPadding: {x: 0, y: 0, z: 0, w: 0}
   m_Maskable: 1
@@ -137,14 +136,26 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   cardValue: 0
+  suit: 0
+  jokerColor: 0
   button: {fileID: 2885666316460800007}
-  buttonText: {fileID: 6249294863498653532}
+  buttonText: {fileID: 0}
   background: {fileID: 5039475599976030060}
   cardArt: {fileID: 5039475599976030060}
-  kingSprite: {fileID: 21300000, guid: 3a4dcd0c5362e5541a0f4b3ba820f241, type: 3}
-  queenSprite: {fileID: 21300000, guid: f4c4bece53e71584c874e03d888fad7d, type: 3}
-  aceSprite: {fileID: 21300000, guid: 8c5fcc5c12a05a248ba6aa1d677a1a6f, type: 3}
-  jokerSprite: {fileID: 21300000, guid: 0fa48aaf51dd0dc4998c2b09fe655aaf, type: 3}
+  kingHeartsSprite: {fileID: 21300000, guid: 3dca085f0e83d9049bb34556560f7022, type: 3}
+  kingDiamondsSprite: {fileID: 21300000, guid: 3767c6c8efb9f5d40bb21b0e522db75f, type: 3}
+  kingClubsSprite: {fileID: 21300000, guid: f0c4306f384829749a6d6686384a953e, type: 3}
+  kingSpadesSprite: {fileID: 21300000, guid: f4cad5bf13df54c4dba52c3caa36a71c, type: 3}
+  queenHeartsSprite: {fileID: 21300000, guid: d38afe2aca3566c42b1d31c986abf506, type: 3}
+  queenDiamondsSprite: {fileID: 21300000, guid: c158f2e5d9662f24f8ef7d88bdec9f13, type: 3}
+  queenClubsSprite: {fileID: 21300000, guid: b7690a3eaab8a874e9fc655314ccbcf1, type: 3}
+  queenSpadesSprite: {fileID: 21300000, guid: a02421ed35d05634abf32dd71af47fdc, type: 3}
+  aceHeartsSprite: {fileID: 21300000, guid: 62b51682c349cef408cf02eea28bc098, type: 3}
+  aceDiamondsSprite: {fileID: 21300000, guid: dee8fa549f9cc114691f996b8f7d1f71, type: 3}
+  aceClubsSprite: {fileID: 21300000, guid: e3438fc2078bcc845b37518522dce432, type: 3}
+  aceSpadesSprite: {fileID: 21300000, guid: 7d64a4d04d3cb1245be6f5ca4b57087d, type: 3}
+  jokerRedSprite: {fileID: 21300000, guid: f2dbf4a9ffb723149bb714a59249513e, type: 3}
+  jokerBlackSprite: {fileID: 21300000, guid: a884ae84b6d8434428bb46d1f6f59f72, type: 3}
 --- !u!114 &2740394854232234592
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -240,82 +251,3 @@ MonoBehaviour:
   m_FillOrigin: 0
   m_UseSpriteMesh: 0
   m_PixelsPerUnitMultiplier: 1
---- !u!1 &5311118436708449708
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 6009307334619232197}
-  - component: {fileID: 5506219916193985643}
-  - component: {fileID: 6249294863498653532}
-  m_Layer: 5
-  m_Name: Text (Legacy)
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 1
---- !u!224 &6009307334619232197
-RectTransform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 5311118436708449708}
-  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
-  m_Children: []
-  m_Father: {fileID: 4348916532285114097}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
-  m_AnchorMin: {x: 0.5, y: 0.5}
-  m_AnchorMax: {x: 0.5, y: 0.5}
-  m_AnchoredPosition: {x: 0, y: 0}
-  m_SizeDelta: {x: 250, y: 350}
-  m_Pivot: {x: 0.5, y: 0.5}
---- !u!222 &5506219916193985643
-CanvasRenderer:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 5311118436708449708}
-  m_CullTransparentMesh: 1
---- !u!114 &6249294863498653532
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 5311118436708449708}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 5f7201a12d95ffc409449d95f23cf332, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  m_Material: {fileID: 0}
-  m_Color: {r: 0.19607843, g: 0.19607843, b: 0.19607843, a: 1}
-  m_RaycastTarget: 1
-  m_RaycastPadding: {x: 0, y: 0, z: 0, w: 0}
-  m_Maskable: 1
-  m_OnCullStateChanged:
-    m_PersistentCalls:
-      m_Calls: []
-  m_FontData:
-    m_Font: {fileID: 10102, guid: 0000000000000000e000000000000000, type: 0}
-    m_FontSize: 156
-    m_FontStyle: 0
-    m_BestFit: 0
-    m_MinSize: 10
-    m_MaxSize: 156
-    m_Alignment: 4
-    m_AlignByGeometry: 0
-    m_RichText: 1
-    m_HorizontalOverflow: 0
-    m_VerticalOverflow: 0
-    m_LineSpacing: 1
-  m_Text: K

@@ -1,5 +1,6 @@
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 using Unity.Collections;
 using Unity.Netcode;
 using UnityEngine;
@@ -95,23 +96,26 @@ public class BluffGamemanager : NetworkBehaviour
             return;
 
         deck = GenerateDeck();
+        // DEBUG: Log deck contents
+        string deckLog = string.Join(", ", deck.Select(c => c.ToString()));
+        Debug.Log($"Deck before sending to clients: {deckLog}");
         ShuffleDeck(deck);
-        DealCards();
         ChooseRandomTableRank();
         currentPlayerIndex = 0;
 
         if (roundNumber == 0)
         {
-            ShowPreRoundIntroClientRpc(currentTableRank);
+            ShowPreRoundIntroClientRpc(currentTableRank, deck.ToArray());
         }
         else
         {
             ShowRoundTableRankClientRpc(currentTableRank);
         }
 
+        DealCards();
         StartTurn();
-        //StartCoroutine(StartTurnAfterIntro());
     }
+
 
     void StartTurn()
     {
@@ -245,7 +249,8 @@ public class BluffGamemanager : NetworkBehaviour
         ShowLastPlayedPlayerInfoClientRpc(
         player.PlayerName.Value,
         player.AvatarId.Value,
-        player.hand.Count
+        player.hand.Count,
+        player.points
         );
 
         // Proceed with other gameplay logic
@@ -331,9 +336,9 @@ public class BluffGamemanager : NetworkBehaviour
 
     // ===== ROUND START =====
     [ClientRpc]
-    void ShowPreRoundIntroClientRpc(TableRank rank)
+    void ShowPreRoundIntroClientRpc(TableRank rank, CardValue[] deck)
     {
-        UIManager.Instance?.ShowFullRoundIntro(rank);
+        UIManager.Instance?.ShowFullRoundIntro(rank, new List<CardValue>(deck));
     }
 
     [ClientRpc]
@@ -362,13 +367,14 @@ public class BluffGamemanager : NetworkBehaviour
     void ShowLastPlayedPlayerInfoClientRpc(
     FixedString32Bytes playerName,
     int avatarId,
-    int cardsLeft
+    int cardsLeft,
+    int points
 )
     {
         if (UIManager.Instance == null)
             return;
 
-        UIManager.Instance.UpdateNextPlayerInfo(playerName, avatarId, cardsLeft);
+        UIManager.Instance.UpdateNextPlayerInfo(playerName, avatarId, cardsLeft, points);
     }
 
     [ClientRpc]
@@ -525,6 +531,63 @@ public class BluffGamemanager : NetworkBehaviour
         if (players[currentPlayerIndex] == player)
         {
             AdvanceToNextAlivePlayer();
+        }
+    }
+
+    public void LeaveGame()
+    {
+        Debug.Log("Leaving game");
+
+        if (NetworkManager.Singleton == null)
+        {
+            SceneManager.LoadScene("Lobby");
+            return;
+        }
+
+        // CLIENT leaves
+        if (NetworkManager.Singleton.IsClient && !NetworkManager.Singleton.IsServer)
+        {
+            RemoveLocalPlayerFromList();
+            NetworkManager.Singleton.Shutdown();
+            SceneManager.LoadScene("Lobby");
+            return;
+        }
+
+        // HOST leaves (shuts down entire session)
+        if (NetworkManager.Singleton.IsServer)
+        {
+            NetworkManager.Singleton.Shutdown();
+            SceneManager.LoadScene("Lobby");
+        }
+    }
+    void RemoveLocalPlayerFromList()
+    {
+        ulong localClientId = NetworkManager.Singleton.LocalClientId;
+
+        Player playerToRemove = players.Find(
+            p => p.OwnerClientId == localClientId
+        );
+
+        if (playerToRemove != null)
+        {
+            players.Remove(playerToRemove);
+            Debug.Log($"Removed player {playerToRemove.PlayerName.Value} from game");
+        }
+    }
+    public override void OnNetworkDespawn()
+    {
+        if (!IsServer) return;
+
+        NetworkManager.Singleton.OnClientDisconnectCallback += OnClientDisconnected;
+    }
+
+    void OnClientDisconnected(ulong clientId)
+    {
+        Player player = players.Find(p => p.OwnerClientId == clientId);
+        if (player != null)
+        {
+            players.Remove(player);
+            Debug.Log($"Player {player.PlayerName.Value} disconnected and removed");
         }
     }
 

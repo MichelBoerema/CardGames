@@ -1,5 +1,6 @@
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 using Unity.Collections;
 using Unity.Netcode;
 using Unity.VisualScripting;
@@ -27,12 +28,19 @@ public class UIManager : MonoBehaviour
     [Header("Game UI")]
     public Text tableRankText;
     public Text lastClaims;
+    public Button leaveGameButton;
+
+    [Header("Leave Game Confirmation")]
+    public GameObject leaveGameConfirmationPopup; // Panel with Yes/No buttons
+    public Button leaveGameYesButton;
+    public Button leaveGameNoButton;
 
     [Header("Next Player Info UI")]
     public GameObject nextPlayerInfoPanel;
     public Image nextPlayerAvatarImage;
     public Text nextPlayerNameText;
     public Text nextPlayerCardsLeftText;
+    public Text nextPlayerPointsAmount;
     [SerializeField] private Sprite fallbackAvatar;
 
     [Header("Popup")]
@@ -98,7 +106,11 @@ public class UIManager : MonoBehaviour
         else
             Destroy(gameObject);
     }
-
+    private void Start()
+    {
+        if (leaveGameButton != null)
+            leaveGameButton.onClick.AddListener(OnLeaveGameButtonClicked);
+    }
     public void SetLocalPlayer(Player player)
     {
         localPlayer = player;
@@ -131,6 +143,41 @@ public class UIManager : MonoBehaviour
             }
         }
     }
+    private void OnLeaveGameButtonClicked()
+    {
+        ShowLeaveGameConfirmation();
+        Debug.Log("Leave Game button clicked");
+    }
+
+    private void ShowLeaveGameConfirmation()
+    {
+        if (leaveGameConfirmationPopup == null) return;
+
+        leaveGameConfirmationPopup.SetActive(true);
+        playCardsButton.interactable = false;
+        callBluffButton.interactable = false;
+
+        leaveGameYesButton.onClick.RemoveAllListeners();
+        leaveGameNoButton.onClick.RemoveAllListeners();
+
+
+
+        leaveGameYesButton.onClick.AddListener(() =>
+        {
+            // Call the actual leave game logic
+            BluffGamemanager.Instance?.LeaveGame();
+
+            leaveGameConfirmationPopup.SetActive(false);
+        });
+
+        leaveGameNoButton.onClick.AddListener(() =>
+        {
+            leaveGameConfirmationPopup.SetActive(false);
+            playCardsButton.interactable = true;
+            callBluffButton.interactable = true;
+        });
+    }
+
     public void PlaySelectedCards()
     {
         if (selectedCards.Count == 0)
@@ -292,16 +339,16 @@ public class UIManager : MonoBehaviour
             Destroy(child.gameObject);
     }
 
-    public void ShowFullRoundIntro(TableRank rank)
+    public void ShowFullRoundIntro(TableRank rank, List<CardValue> deck)
     {
-        StartCoroutine(FullRoundIntroRoutine(rank));
+        StartCoroutine(FullRoundIntroRoutine(rank, deck));
     }
 
-    IEnumerator FullRoundIntroRoutine(TableRank rank)
+    IEnumerator FullRoundIntroRoutine(TableRank rank, List<CardValue> deck)
     {
         yield return PreRoundIntroRoutineInternal();
 
-        ShowRoundStartPopup(rank);
+        ShowRoundStartPopup(deck);
         yield return new WaitForSeconds(4f);
 
         ShowTableRankPopup(rank);
@@ -325,21 +372,28 @@ public class UIManager : MonoBehaviour
         preRoundIntroPopup.SetActive(false);
     }
 
-    public void ShowRoundStartPopup(TableRank tableRank)
+    public void ShowRoundStartPopup(List<CardValue> deck)
     {
         infoPopup.SetActive(true);
         ClearSpawnedCards();
 
         titleText.text = "Round Started";
 
+        int kings = deck.Count(c => c == CardValue.King);
+        int queens = deck.Count(c => c == CardValue.Queen);
+        int aces = deck.Count(c => c == CardValue.Ace);
+        int jokers = deck.Count(c => c == CardValue.Joker);
+
         descriptionText.text =
-            "Deck Contains:\n" +
-            "• 6× King\n" +
-            "• 6× Queen\n" +
-            "• 6× Ace\n" +
-            "• 2× Joker";
+            $"Deck Contains:\n" +
+            $"• {kings}× King\n" +
+            $"• {queens}× Queen\n" +
+            $"• {aces}× Ace\n" +
+            $"• {jokers}× Joker";
+
         StartCoroutine(HidePopupAfterDelay(4f));
     }
+
     public void ShowTableRankPopup(TableRank rank)
     {
         StartCoroutine(ShowTableRankWhenReady(rank));
@@ -573,13 +627,15 @@ public class UIManager : MonoBehaviour
     public void UpdateNextPlayerInfo(
     FixedString32Bytes playerName,
     int avatarId,
-    int cardsLeft
-)
+    int cardsLeft,
+    int points
+    )
     {
         nextPlayerInfoPanel.SetActive(true);
 
         nextPlayerNameText.text = playerName.ToString();
         nextPlayerCardsLeftText.text = cardsLeft.ToString();
+        nextPlayerPointsAmount.text = $"{points}/6";
 
         Sprite avatar = AvatarDatabase.Instance?.GetAvatar(avatarId);
         nextPlayerAvatarImage.sprite = avatar != null

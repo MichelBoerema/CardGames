@@ -52,7 +52,7 @@ public class AvatarDatabase : NetworkBehaviour
         if (!IsServer)
             throw new System.Exception("Only server can add avatars");
 
-        Texture2D tex = new Texture2D(2, 2);
+        Texture2D tex = new Texture2D(64, 64);
         tex.LoadImage(compressedAvatar);
         Sprite sprite = Sprite.Create(
             tex,
@@ -73,7 +73,7 @@ public class AvatarDatabase : NetworkBehaviour
     [ClientRpc]
     private void SendAvatarToClientRpc(byte[] compressedAvatar, int id, ClientRpcParams rpcParams = default)
     {
-        Texture2D tex = new Texture2D(2, 2);
+        Texture2D tex = new Texture2D(64, 64);
         tex.LoadImage(compressedAvatar);
 
         Sprite sprite = Sprite.Create(

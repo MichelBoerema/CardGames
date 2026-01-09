@@ -86,7 +86,7 @@ public class Player : NetworkBehaviour
         if (avatarTex == null)
             yield break;
 
-        Texture2D small = ResizeTexture(avatarTex, 32, 32);
+        Texture2D small = ResizeTexture(avatarTex, 512, 512);
         byte[] compressed = small.EncodeToJPG(10);
 
         UploadAvatarServerRpc(compressed);
