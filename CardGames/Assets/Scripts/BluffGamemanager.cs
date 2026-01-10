@@ -96,9 +96,6 @@ public class BluffGamemanager : NetworkBehaviour
             return;
 
         deck = GenerateDeck();
-        // DEBUG: Log deck contents
-        string deckLog = string.Join(", ", deck.Select(c => c.ToString()));
-        Debug.Log($"Deck before sending to clients: {deckLog}");
         ShuffleDeck(deck);
         ChooseRandomTableRank();
         currentPlayerIndex = 0;
@@ -318,10 +315,15 @@ public class BluffGamemanager : NetworkBehaviour
     {
         if (!IsServer) return;
 
-        NetworkManager.SceneManager.LoadScene(
-            "BluffGame",
-            LoadSceneMode.Single
-        );
+        gameOver = false;
+
+        foreach (Player p in players)
+        {
+            p.ClearHand();
+            p.ClearPoints();
+        }
+
+        StartGameServer();
     }
 
     public void GoBackToLobby()

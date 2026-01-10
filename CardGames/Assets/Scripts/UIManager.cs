@@ -56,6 +56,7 @@ public class UIManager : MonoBehaviour
 
     [Header("Bluff Animation")]
     public Image punishedAvatarImage;
+    public GameObject punishedAvatarRoot;
     public Text punishedPlayerNameText;
     public GameObject gunObject;
     public Animator gunAnimator;
@@ -231,6 +232,7 @@ public class UIManager : MonoBehaviour
             Debug.Log("restart failed");
             return;
         }
+        gameOverPanel.SetActive(false);
 
         BluffGamemanager.Instance.RestartGameServer();
     }
@@ -510,7 +512,7 @@ public class UIManager : MonoBehaviour
         titleText.text = "";
 
         punishedAvatarImage.sprite = punishedPlayer.GetNetworkAvatar();
-        punishedAvatarImage.gameObject.SetActive(true);
+        punishedAvatarRoot.SetActive(true);
 
         // Player Name
         punishedPlayerNameText.text = punishedPlayer.PlayerName.Value.ToString();
@@ -523,7 +525,7 @@ public class UIManager : MonoBehaviour
         );
 
         gunObject.SetActive(false);
-        punishedAvatarImage.gameObject.SetActive(false);
+        punishedAvatarRoot.SetActive(false);
         punishedPlayerNameText.gameObject.SetActive(false);
     }
 

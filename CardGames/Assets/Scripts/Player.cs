@@ -135,7 +135,7 @@ public class Player : NetworkBehaviour
     }
 
     [ClientRpc]
-    public void SetTurnClientRpc(bool isMyTurn)
+    public virtual void SetTurnClientRpc(bool isMyTurn)
     {
         IsMyTurn = isMyTurn;
 
@@ -144,6 +144,7 @@ public class Player : NetworkBehaviour
             UIManager.Instance.SetPlayerTurn(isMyTurn);
         }
     }
+
 
     public void AddCard(CardValue card)
     {
@@ -186,6 +187,18 @@ public class Player : NetworkBehaviour
         }
     }
 
+    public void ClearPoints()
+    {
+        if (!IsServer) return;
+
+        ClearPointsClientRpc();
+    }
+
+    [ClientRpc]
+    void ClearPointsClientRpc()
+    {
+        points = 0;
+    }
     public int GetCardsInHandCount()
     {
         return hand.Count;

@@ -226,7 +226,7 @@ public class LobbyManager : MonoBehaviour
         {
             GameObject row = Instantiate(playerRowPrefab, playerListParent);
 
-            Image avatarImage = row.transform.Find("AvatarImage").GetComponent<Image>();
+            Image avatarImage = row.transform.Find("AvatarBorder").Find("AvatarRoot").Find("AvatarImage").GetComponent<Image>();
             Text nameText = row.transform.Find("PlayerNameText").GetComponent<Text>();
 
             nameText.text = player.PlayerName.Value.ToString();
