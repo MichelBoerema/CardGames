@@ -9,14 +9,10 @@ public class BarAudioManager : MonoBehaviour
     [Header("Ambience")]
     public AudioSource ambienceSource;
     public AudioClip ambienceClip;
-    [Range(0f, 1f)]
-    public float ambienceVolume = 1f;
 
     [Header("Music Playlist")]
     public AudioSource musicSource;
-    public List<AudioClip> musicClips = new List<AudioClip>();
-    [Range(0f, 1f)]
-    public float musicVolume = 1f;
+    public List<AudioClip> musicClips = new();
 
     [Header("Settings")]
     public bool shuffleMusic = false;
@@ -24,12 +20,16 @@ public class BarAudioManager : MonoBehaviour
 
     int currentMusicIndex = 0;
 
-    const string MusicVolumeKey = "MusicVolume";
-    const string AmbienceVolumeKey = "AmbienceVolume";
+    const string MusicEnabledKey = "MusicEnabled";
+    const string AmbienceEnabledKey = "AmbienceEnabled";
+    const string SoundEffectsEnabledKey = "SoundEffectsEnabled";
+
+    public bool MusicEnabled { get; private set; } = true;
+    public bool AmbienceEnabled { get; private set; } = true;
+    public bool SoundEffectsEnabled { get; private set; } = true;
 
     void Awake()
     {
-        // Singleton guard
         if (Instance != null && Instance != this)
         {
             Destroy(gameObject);
@@ -42,33 +42,59 @@ public class BarAudioManager : MonoBehaviour
 
     void Start()
     {
-        LoadVolumes();
+        LoadSettings();
+
         StartAmbience();
         StartMusic();
+
+        ApplyAudioSettings();
     }
 
-    void LoadVolumes()
+    void LoadSettings()
     {
-        musicVolume = PlayerPrefs.GetFloat(MusicVolumeKey, musicVolume);
-        ambienceVolume = PlayerPrefs.GetFloat(AmbienceVolumeKey, ambienceVolume);
+        MusicEnabled = PlayerPrefs.GetInt(MusicEnabledKey, 1) == 1;
+        AmbienceEnabled = PlayerPrefs.GetInt(AmbienceEnabledKey, 1) == 1;
+        SoundEffectsEnabled = PlayerPrefs.GetInt(SoundEffectsEnabledKey, 1) == 1;
     }
 
-    public void SetMusicVolume(float value)
+    void SaveSettings()
     {
-        musicVolume = value;
-        if (musicSource != null)
-            musicSource.volume = value;
-
-        PlayerPrefs.SetFloat(MusicVolumeKey, value);
+        PlayerPrefs.SetInt(MusicEnabledKey, MusicEnabled ? 1 : 0);
+        PlayerPrefs.SetInt(AmbienceEnabledKey, AmbienceEnabled ? 1 : 0);
+        PlayerPrefs.SetInt(SoundEffectsEnabledKey, SoundEffectsEnabled ? 1 : 0);
+        PlayerPrefs.Save();
     }
 
-    public void SetAmbienceVolume(float value)
+    public void ToggleMusic()
     {
-        ambienceVolume = value;
+        MusicEnabled = !MusicEnabled;
+        ApplyAudioSettings();
+        SaveSettings();
+    }
+
+    public void ToggleAmbience()
+    {
+        AmbienceEnabled = !AmbienceEnabled;
+
         if (ambienceSource != null)
-            ambienceSource.volume = value;
+            ambienceSource.mute = !AmbienceEnabled;
 
-        PlayerPrefs.SetFloat(AmbienceVolumeKey, value);
+        SaveSettings();
+    }
+
+    public void ToggleSoundEffects()
+    {
+        SoundEffectsEnabled = !SoundEffectsEnabled;
+        SaveSettings();
+    }
+
+    void ApplyAudioSettings()
+    {
+        if (musicSource != null)
+            musicSource.mute = !MusicEnabled;
+
+        if (ambienceSource != null)
+            ambienceSource.mute = !AmbienceEnabled;
     }
 
     // ---------------- AMBIENCE ----------------
@@ -80,7 +106,6 @@ public class BarAudioManager : MonoBehaviour
 
         ambienceSource.clip = ambienceClip;
         ambienceSource.loop = true;
-        ambienceSource.volume = ambienceVolume;
         ambienceSource.Play();
     }
 
@@ -90,8 +115,6 @@ public class BarAudioManager : MonoBehaviour
     {
         if (musicSource == null || musicClips.Count == 0)
             return;
-
-        musicSource.volume = musicVolume;
 
         if (shuffleMusic)
             Shuffle(musicClips);
@@ -104,6 +127,7 @@ public class BarAudioManager : MonoBehaviour
         while (true)
         {
             AudioClip clip = musicClips[currentMusicIndex];
+
             musicSource.clip = clip;
             musicSource.loop = false;
             musicSource.Play();
@@ -111,6 +135,7 @@ public class BarAudioManager : MonoBehaviour
             yield return new WaitForSeconds(clip.length + delayBetweenTracks);
 
             currentMusicIndex++;
+
             if (currentMusicIndex >= musicClips.Count)
                 currentMusicIndex = 0;
         }

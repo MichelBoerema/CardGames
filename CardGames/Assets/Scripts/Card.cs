@@ -1,12 +1,59 @@
+using Unity.Netcode;
 using UnityEngine;
 using UnityEngine.UI;
 
-public enum Suit
+
+[System.Serializable]
+public struct PlayingCard : INetworkSerializable
 {
-    Hearts,
-    Diamonds,
-    Clubs,
-    Spades
+    public PlayingDeckCardValue Value;
+    public CardSuit Suit;
+
+    public PlayingCard(PlayingDeckCardValue value, CardSuit suit)
+    {
+        Value = value;
+        Suit = suit;
+    }
+
+    public void NetworkSerialize<T>(BufferSerializer<T> serializer)
+        where T : IReaderWriter
+    {
+        serializer.SerializeValue(ref Value);
+        serializer.SerializeValue(ref Suit);
+    }
+    public override string ToString()
+    {
+        if (Value == PlayingDeckCardValue.Joker)
+            return "Joker";
+
+        return $"{Value} of {Suit}";
+    }
+
+    public bool IsRed =>
+    Suit == CardSuit.Hearts || Suit == CardSuit.Diamonds;
+
+    public bool IsBlack =>
+        Suit == CardSuit.Clubs || Suit == CardSuit.Spades;
+
+    public bool IsJoker => Value == PlayingDeckCardValue.Joker;
+}
+
+public enum PlayingDeckCardValue
+{
+    Ace = 1,
+    Two = 2,
+    Three = 3,
+    Four = 4,
+    Five = 5,
+    Six = 6,
+    Seven = 7,
+    Eight = 8,
+    Nine = 9,
+    Ten = 10,
+    Jack = 11,
+    Queen = 12,
+    King = 13,
+    Joker = 99
 }
 
 public enum JokerColor
@@ -17,14 +64,12 @@ public enum JokerColor
 
 public class Card : MonoBehaviour
 {
-    public CardValue cardValue;
-    public Suit suit;
+    public PlayingCard playingCard;
     public JokerColor jokerColor;
     public bool IsSelected { get; private set; }
 
     [Header("UI References")]
     [SerializeField] private Button button;
-    [SerializeField] private Text buttonText;
     [SerializeField] private Image background;
     [SerializeField] private Image cardArt;
 
@@ -53,18 +98,15 @@ public class Card : MonoBehaviour
         button.onClick.AddListener(ToggleSelected);
     }
 
-    public void Setup(CardValue value)
+    public void Setup(PlayingCard card)
     {
-        cardValue = value;
+        playingCard = card;
 
-        // Randomize suit for King, Queen, Ace
-        if (cardValue == CardValue.King || cardValue == CardValue.Queen || cardValue == CardValue.Ace)
+        if (playingCard.Value == PlayingDeckCardValue.Joker)
         {
-            suit = (Suit)Random.Range(0, 4); // 0-3 = Hearts, Diamonds, Clubs, Spades
-        }
-        else if (cardValue == CardValue.Joker)
-        {
-            jokerColor = (Random.Range(0, 2) == 0) ? JokerColor.Red : JokerColor.Black;
+            jokerColor = Random.Range(0, 2) == 0
+                ? JokerColor.Red
+                : JokerColor.Black;
         }
 
         cardArt.sprite = GetCardSprite();
@@ -93,40 +135,28 @@ public class Card : MonoBehaviour
 
     Sprite GetCardSprite()
     {
-        switch (cardValue)
+        if (playingCard.Value == PlayingDeckCardValue.Joker)
+            return jokerColor == JokerColor.Red ? jokerRedSprite : jokerBlackSprite;
+
+        return (playingCard.Value, playingCard.Suit) switch
         {
-            case CardValue.King:
-                return suit switch
-                {
-                    Suit.Hearts => kingHeartsSprite,
-                    Suit.Diamonds => kingDiamondsSprite,
-                    Suit.Clubs => kingClubsSprite,
-                    Suit.Spades => kingSpadesSprite,
-                    _ => null
-                };
-            case CardValue.Queen:
-                return suit switch
-                {
-                    Suit.Hearts => queenHeartsSprite,
-                    Suit.Diamonds => queenDiamondsSprite,
-                    Suit.Clubs => queenClubsSprite,
-                    Suit.Spades => queenSpadesSprite,
-                    _ => null
-                };
-            case CardValue.Ace:
-                return suit switch
-                {
-                    Suit.Hearts => aceHeartsSprite,
-                    Suit.Diamonds => aceDiamondsSprite,
-                    Suit.Clubs => aceClubsSprite,
-                    Suit.Spades => aceSpadesSprite,
-                    _ => null
-                };
-            case CardValue.Joker:
-                return jokerColor == JokerColor.Red ? jokerRedSprite : jokerBlackSprite;
-            default:
-                return null;
-        }
+            (PlayingDeckCardValue.King, CardSuit.Hearts) => kingHeartsSprite,
+            (PlayingDeckCardValue.King, CardSuit.Diamonds) => kingDiamondsSprite,
+            (PlayingDeckCardValue.King, CardSuit.Clubs) => kingClubsSprite,
+            (PlayingDeckCardValue.King, CardSuit.Spades) => kingSpadesSprite,
+
+            (PlayingDeckCardValue.Queen, CardSuit.Hearts) => queenHeartsSprite,
+            (PlayingDeckCardValue.Queen, CardSuit.Diamonds) => queenDiamondsSprite,
+            (PlayingDeckCardValue.Queen, CardSuit.Clubs) => queenClubsSprite,
+            (PlayingDeckCardValue.Queen, CardSuit.Spades) => queenSpadesSprite,
+
+            (PlayingDeckCardValue.Ace, CardSuit.Hearts) => aceHeartsSprite,
+            (PlayingDeckCardValue.Ace, CardSuit.Diamonds) => aceDiamondsSprite,
+            (PlayingDeckCardValue.Ace, CardSuit.Clubs) => aceClubsSprite,
+            (PlayingDeckCardValue.Ace, CardSuit.Spades) => aceSpadesSprite,
+
+            _ => null
+        };
     }
 
     public void HighlightCard(bool isCorrect)

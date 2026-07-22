@@ -123,11 +123,11 @@ public class UIManager : MonoBehaviour
         localPlayer = player;
     }
 
-    public void AddCardToHand(CardValue cardValue)
+    public void AddCardToHand(PlayingCard playingCard)
     {
         GameObject cardGO = Instantiate(cardButtonPrefab, handUIParent);
         Card card = cardGO.GetComponent<Card>();
-        card.Setup(cardValue);
+        card.Setup(playingCard);
     }
 
     public void SetPlayerTurn(bool isMyTurn)
@@ -190,11 +190,11 @@ public class UIManager : MonoBehaviour
         if (selectedCards.Count == 0)
             return;
 
-        List<CardValue> playedValues = new List<CardValue>();
+        List<PlayingCard> playedCards = new();
 
         foreach (Card card in selectedCards)
         {
-            playedValues.Add(card.cardValue);
+            playedCards.Add(card.playingCard);
             Destroy(card.gameObject);
         }
 
@@ -204,15 +204,15 @@ public class UIManager : MonoBehaviour
         // Remove these cards from the local player's hand
         if (localPlayer != null)
         {
-            foreach (CardValue cv in playedValues)
+            foreach (PlayingCard card in playedCards)
             {
-                localPlayer.hand.Remove(cv);
+                localPlayer.hand.Remove(card);
             }
         }
 
         cardAudioS.PlayOneShot(placeCardClip);
         // Send played cards to server
-        BluffGamemanager.Instance.PlayCardsServerRpc(playedValues.ToArray());
+        BluffGamemanager.Instance.PlayCardsServerRpc(playedCards.ToArray());
     }
 
     public void CallBluff()
@@ -348,12 +348,12 @@ public class UIManager : MonoBehaviour
             Destroy(child.gameObject);
     }
 
-    public void ShowFullRoundIntro(TableRank rank, List<CardValue> deck)
+    public void ShowFullRoundIntro(TableRank rank, List<PlayingCard> deck)
     {
         StartCoroutine(FullRoundIntroRoutine(rank, deck));
     }
 
-    IEnumerator FullRoundIntroRoutine(TableRank rank, List<CardValue> deck)
+    IEnumerator FullRoundIntroRoutine(TableRank rank, List<PlayingCard> deck)
     {
         yield return PreRoundIntroRoutineInternal();
 
@@ -382,17 +382,17 @@ public class UIManager : MonoBehaviour
         preRoundIntroPopup.SetActive(false);
     }
 
-    public void ShowRoundStartPopup(List<CardValue> deck)
+    public void ShowRoundStartPopup(List<PlayingCard> deck)
     {
         infoPopup.SetActive(true);
         ClearSpawnedCards();
 
         titleText.text = "Round Started";
 
-        int kings = deck.Count(c => c == CardValue.King);
-        int queens = deck.Count(c => c == CardValue.Queen);
-        int aces = deck.Count(c => c == CardValue.Ace);
-        int jokers = deck.Count(c => c == CardValue.Joker);
+        int kings = deck.Count(c => c.Value == PlayingDeckCardValue.King);
+        int queens = deck.Count(c => c.Value == PlayingDeckCardValue.Queen);
+        int aces = deck.Count(c => c.Value == PlayingDeckCardValue.Ace);
+        int jokers = deck.Count(c => c.Value == PlayingDeckCardValue.Joker);
 
         descriptionText.text =
             $"Deck Contains:\n" +
@@ -472,9 +472,10 @@ public class UIManager : MonoBehaviour
     }
 
     public void ShowBluffRevealSequence(
+        Player lastPlayer,
     Player punishedPlayer,
     int chamberIndex,
-    CardValue[] cards,
+    PlayingCard[] cards,
     TableRank rank,
     bool survived)
     {
@@ -482,20 +483,24 @@ public class UIManager : MonoBehaviour
             return;
 
         StartCoroutine(
-            BluffRevealSequence(punishedPlayer, chamberIndex, cards, rank, survived)
+            BluffRevealSequence(lastPlayer, punishedPlayer, chamberIndex, cards, rank, survived)
         );
     }
 
     IEnumerator BluffRevealSequence(
+        Player lastPlayer,
     Player punishedPlayer,
     int chamberIndex,
-    CardValue[] cards,
+    PlayingCard[] cards,
     TableRank rank,
     bool survived)
     {
         isPopupLocked = true;
 
+        Debug.Log($"punishedPlayer is {punishedPlayer.PlayerName.Value}");
+
         ShowBluffReveal(
+            lastPlayer.PlayerName.Value,
             punishedPlayer.PlayerName.Value,
             cards,
             rank
@@ -574,39 +579,64 @@ public class UIManager : MonoBehaviour
 
     public void ShowBluffReveal(
     FixedString32Bytes playerName,
-    CardValue[] cards,
+    FixedString32Bytes punishedPlayerName,
+    PlayingCard[] cards,
     TableRank rank)
-    {
+{
+        Debug.Log($"ShowBluffReveal called for {playerName}");
+
         infoPopup.SetActive(true);
-        ClearSpawnedCards();
+    ClearSpawnedCards();
 
-        titleText.text = $"{playerName} claimed {cards.Length}X {rank}";
-        descriptionText.text = "";
+    bool lied = false;
 
-        foreach (CardValue cardValue in cards)
+    foreach (PlayingCard playingCard in cards)
+    {
+        if (playingCard.Value != PlayingDeckCardValue.Joker &&
+            !DoesCardMatchTableRank(playingCard, rank))
         {
-            GameObject cardGO = Instantiate(uiCardPrefab, cardSpawnParent);
-            Card card = cardGO.GetComponent<Card>();
-
-            card.Setup(cardValue);
-            card.SetInteractable(false);
-
-            bool isCorrect =
-                cardValue == CardValue.Joker ||
-                DoesCardMatchTableRank(cardValue, rank);
-
-            card.HighlightCard(isCorrect);
+            lied = true;
+            break;
         }
     }
 
-    private bool DoesCardMatchTableRank(CardValue card, TableRank rank)
+    titleText.text = lied
+        ? $"{playerName} LIED!"
+        : $"{playerName} told the truth!";
+
+    descriptionText.text = $"{punishedPlayerName} gets SHOT!";
+
+    foreach (PlayingCard playingCard in cards)
+    {
+        GameObject cardGO = Instantiate(uiCardPrefab, cardSpawnParent);
+        Card card = cardGO.GetComponent<Card>();
+
+        card.Setup(playingCard);
+        card.SetInteractable(false);
+
+        bool isCorrect =
+            playingCard.Value == PlayingDeckCardValue.Joker ||
+            DoesCardMatchTableRank(playingCard, rank);
+
+        card.HighlightCard(isCorrect);
+    }
+}
+
+    private bool DoesCardMatchTableRank(PlayingCard card, TableRank rank)
     {
         switch (rank)
         {
-            case TableRank.King: return card == CardValue.King;
-            case TableRank.Queen: return card == CardValue.Queen;
-            case TableRank.Ace: return card == CardValue.Ace;
-            default: return false;
+            case TableRank.King:
+                return card.Value == PlayingDeckCardValue.King;
+
+            case TableRank.Queen:
+                return card.Value == PlayingDeckCardValue.Queen;
+
+            case TableRank.Ace:
+                return card.Value == PlayingDeckCardValue.Ace;
+
+            default:
+                return false;
         }
     }
 

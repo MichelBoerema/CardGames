@@ -7,14 +7,6 @@ using Unity.Netcode;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
-public enum CardValue
-{
-    King,
-    Queen,
-    Ace,
-    Joker
-}
-
 public enum TableRank
 {
     King,
@@ -29,11 +21,11 @@ public class BluffGamemanager : NetworkBehaviour
 
     // Players & deck
     public List<Player> players = new();
-    private List<CardValue> deck;
+    private List<PlayingCard> deck;
 
     // Game state
     public TableRank currentTableRank;
-    public List<CardValue> laatsteGespeeldeKaarten = new();
+    public List<PlayingCard> laatsteGespeeldeKaarten = new();
     [SerializeField] private int currentPlayerIndex = 0;
     private int roundNumber = 0;
     private bool gameOver = false;
@@ -208,7 +200,7 @@ public class BluffGamemanager : NetworkBehaviour
     }
 
     [ServerRpc(RequireOwnership = false)]
-    public void PlayCardsServerRpc(CardValue[] cards, ServerRpcParams rpcParams = default)
+    public void PlayCardsServerRpc(PlayingCard[] cards, ServerRpcParams rpcParams = default)
     {
         Player player = players[currentPlayerIndex];
 
@@ -216,10 +208,13 @@ public class BluffGamemanager : NetworkBehaviour
             return;
 
         // Remove cards from the server's authoritative hand
-        foreach (var cv in cards)
+        foreach (var card in cards)
         {
-            player.hand.Remove(cv);
+            player.hand.Remove(card);
         }
+
+        laatsteGespeeldeKaarten.Clear();
+        laatsteGespeeldeKaarten.AddRange(cards);
 
         ShowLastPlayedPlayerInfoClientRpc(
         player.PlayerName.Value,
@@ -264,11 +259,13 @@ public class BluffGamemanager : NetworkBehaviour
     {
         punishedPlayerIndex = DeterminePunishedPlayer();
         Player punishedPlayer = players[punishedPlayerIndex];
+        Player lastPlayer = players[lastPlayedPlayerIndex];
 
         punishedPlayer.PullTrigger(punishedPlayer.PlayerName.Value);
         bool survived = punishedPlayer.IsAlive;
 
         ShowBluffClientRpc(
+            lastPlayer.NetworkObject,
             punishedPlayer.NetworkObject,
             punishedPlayer.points,
             laatsteGespeeldeKaarten.ToArray(),
@@ -326,9 +323,9 @@ public class BluffGamemanager : NetworkBehaviour
 
     // ===== ROUND START =====
     [ClientRpc]
-    void ShowPreRoundIntroClientRpc(TableRank rank, CardValue[] deck)
+    void ShowPreRoundIntroClientRpc(TableRank rank, PlayingCard[] deck)
     {
-        UIManager.Instance?.ShowFullRoundIntro(rank, new List<CardValue>(deck));
+        UIManager.Instance?.ShowFullRoundIntro(rank, new List<PlayingCard>(deck));
     }
 
     [ClientRpc]
@@ -388,11 +385,12 @@ public class BluffGamemanager : NetworkBehaviour
     // ===== BLUFF REVEAL =====
     [ClientRpc]
     void ShowBluffRevealClientRpc(
-        FixedString32Bytes playerName,
-        CardValue[] cards,
-        TableRank rank)
+    FixedString32Bytes playerName,
+    PlayingCard[] cards,
+    TableRank rank)
     {
-        UIManager.Instance?.ShowBluffReveal(playerName, cards, rank);
+        Debug.Log($"ShowBluffRevealClientRpc called for {playerName}");
+        //UIManager.Instance?.ShowBluffReveal(playerName, cards, rank);
     }
 
     [ClientRpc]
@@ -407,18 +405,22 @@ public class BluffGamemanager : NetworkBehaviour
     // ===== BLUFF RESULT =====
     [ClientRpc]
     void ShowBluffClientRpc(
-    NetworkObjectReference playerRef,
+    NetworkObjectReference lastPlayerRef,
+    NetworkObjectReference punishedPlayerRef,
     int chamberIndex,
-    CardValue[] cards,
+    PlayingCard[] cards,
     TableRank rank,
     bool survived)
     {
-        if (!playerRef.TryGet(out NetworkObject obj)) return;
+        if (!punishedPlayerRef.TryGet(out NetworkObject Pp_obj)) return;
+        if (!lastPlayerRef.TryGet(out NetworkObject Lp_obj)) return;
 
-        Player player = obj.GetComponent<Player>();
+        Player punishedPlayer = Pp_obj.GetComponent<Player>();
+        Player lastPlayer = Lp_obj.GetComponent<Player>();
         UIManager.Instance.HidePopup();
         UIManager.Instance.ShowBluffRevealSequence(
-            player,
+            lastPlayer,
+            punishedPlayer,
             chamberIndex,
             cards,
             rank,
@@ -488,7 +490,7 @@ public class BluffGamemanager : NetworkBehaviour
         UpdateTableRankClientRpc(currentTableRank);
     }
 
-    public void PlayCards(List<CardValue> cards)
+    public void PlayCards(List<PlayingCard> cards)
     {
         if (!IsOwner) return;
 
@@ -499,9 +501,9 @@ public class BluffGamemanager : NetworkBehaviour
     {
         bool isBluff = false;
 
-        foreach (CardValue card in laatsteGespeeldeKaarten)
+        foreach (PlayingCard card in laatsteGespeeldeKaarten)
         {
-            if (card == CardValue.Joker)
+            if (card.Value == PlayingDeckCardValue.Joker)
                 continue;
 
             if (!DoesCardMatchTableRank(card))
@@ -636,16 +638,19 @@ public class BluffGamemanager : NetworkBehaviour
         return -1; 
     }
 
-    bool DoesCardMatchTableRank(CardValue card)
+    bool DoesCardMatchTableRank(PlayingCard card)
     {
         switch (currentTableRank)
         {
             case TableRank.King:
-                return card == CardValue.King;
+                return card.Value == PlayingDeckCardValue.King;
+
             case TableRank.Queen:
-                return card == CardValue.Queen;
+                return card.Value == PlayingDeckCardValue.Queen;
+
             case TableRank.Ace:
-                return card == CardValue.Ace;
+                return card.Value == PlayingDeckCardValue.Ace;
+
             default:
                 return false;
         }
@@ -668,7 +673,7 @@ public class BluffGamemanager : NetworkBehaviour
                     return;
                 }
 
-                CardValue card = deck[0];
+                PlayingCard card = deck[0];
                 deck.RemoveAt(0);
 
                 players[i].AddCard(card);
@@ -676,43 +681,55 @@ public class BluffGamemanager : NetworkBehaviour
         }
     }
 
-    List<CardValue> GenerateDeck()
+    List<PlayingCard> GenerateDeck()
     {
-        List<CardValue> deck = new List<CardValue>();
+        List<PlayingCard> deck = new List<PlayingCard>();
 
         int cardsPerPlayer = 5;
         int totalCardsNeeded = players.Count * cardsPerPlayer;
 
-        // Reserve 1 Joker minimum
+        // Reserve at least 1 Joker
         int remainingCards = totalCardsNeeded - 1;
 
-        // Make remaining cards divisible by 3 (K/Q/A)
+        // Make remaining cards divisible by 3 (King/Queen/Ace)
         int baseSetSize = (remainingCards / 3) * 3;
         int perTypeCount = baseSetSize / 3;
+
+        CardSuit[] suits =
+        {
+        CardSuit.Hearts,
+        CardSuit.Diamonds,
+        CardSuit.Clubs,
+        CardSuit.Spades
+    };
+
+        int suitIndex = 0;
 
         // Add equal Kings / Queens / Aces
         for (int i = 0; i < perTypeCount; i++)
         {
-            deck.Add(CardValue.King);
-            deck.Add(CardValue.Queen);
-            deck.Add(CardValue.Ace);
+            deck.Add(new PlayingCard(PlayingDeckCardValue.King, suits[suitIndex++ % suits.Length]));
+            deck.Add(new PlayingCard(PlayingDeckCardValue.Queen, suits[suitIndex++ % suits.Length]));
+            deck.Add(new PlayingCard(PlayingDeckCardValue.Ace, suits[suitIndex++ % suits.Length]));
         }
 
         // Add Jokers to fill the rest (at least 1)
         while (deck.Count < totalCardsNeeded)
         {
-            deck.Add(CardValue.Joker);
+            deck.Add(new PlayingCard(
+                PlayingDeckCardValue.Joker,
+                CardSuit.Joker));
         }
 
         return deck;
     }
 
-    void ShuffleDeck(List<CardValue> deck)
+    void ShuffleDeck(List<PlayingCard> deck)
     {
         for (int i = 0; i < deck.Count; i++)
         {
             int randomIndex = Random.Range(i, deck.Count);
-            CardValue temp = deck[i];
+            PlayingCard temp = deck[i];
             deck[i] = deck[randomIndex];
             deck[randomIndex] = temp;
         }

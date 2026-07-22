@@ -4,34 +4,35 @@ using UnityEngine.UI;
 public class AudioSettingsMenu : MonoBehaviour
 {
     [Header("UI")]
-    public Slider musicSlider;
-    public Slider ambienceSlider;
+    [SerializeField] private Button musicButton;
+    [SerializeField] private Button ambienceButton;
+    [SerializeField] private Button soundEffectsButton;
+
+    [Header("Mute Overlays")]
+    [SerializeField] private Image musicMutedOverlay;
+    [SerializeField] private Image ambienceMutedOverlay;
+    [SerializeField] private Image soundEffectsMutedOverlay;
 
     [Header("Menu Root")]
-    public GameObject menuRoot; // Panel that contains the settings UI
+    [SerializeField] private GameObject menuRoot;
 
     void Start()
     {
-        // Initialize sliders with current values
-        if (BarAudioManager.Instance != null)
-        {
-            musicSlider.value = BarAudioManager.Instance.musicVolume;
-            ambienceSlider.value = BarAudioManager.Instance.ambienceVolume;
-        }
+        musicButton.onClick.AddListener(OnMusicClicked);
+        ambienceButton.onClick.AddListener(OnAmbienceClicked);
+        soundEffectsButton.onClick.AddListener(OnSoundEffectsClicked);
 
-        // Hook up listeners
-        musicSlider.onValueChanged.AddListener(OnMusicVolumeChanged);
-        ambienceSlider.onValueChanged.AddListener(OnAmbienceVolumeChanged);
-
-        // Start closed
         if (menuRoot != null)
             menuRoot.SetActive(false);
+
+        RefreshUI();
     }
 
     void OnDestroy()
     {
-        musicSlider.onValueChanged.RemoveListener(OnMusicVolumeChanged);
-        ambienceSlider.onValueChanged.RemoveListener(OnAmbienceVolumeChanged);
+        musicButton.onClick.RemoveListener(OnMusicClicked);
+        ambienceButton.onClick.RemoveListener(OnAmbienceClicked);
+        soundEffectsButton.onClick.RemoveListener(OnSoundEffectsClicked);
     }
 
     // ---------------- OPEN / CLOSE ----------------
@@ -41,13 +42,7 @@ public class AudioSettingsMenu : MonoBehaviour
         if (menuRoot == null) return;
 
         menuRoot.SetActive(true);
-
-        // Refresh slider values in case audio changed elsewhere
-        if (BarAudioManager.Instance != null)
-        {
-            musicSlider.value = BarAudioManager.Instance.musicVolume;
-            ambienceSlider.value = BarAudioManager.Instance.ambienceVolume;
-        }
+        RefreshUI();
     }
 
     public void CloseSettings()
@@ -57,17 +52,44 @@ public class AudioSettingsMenu : MonoBehaviour
         menuRoot.SetActive(false);
     }
 
-    // ---------------- VOLUME HANDLERS ----------------
+    // ---------------- BUTTONS ----------------
 
-    void OnMusicVolumeChanged(float value)
+    void OnMusicClicked()
     {
-        if (BarAudioManager.Instance != null)
-            BarAudioManager.Instance.SetMusicVolume(value);
+        if (BarAudioManager.Instance == null)
+            return;
+
+        BarAudioManager.Instance.ToggleMusic();
+        RefreshUI();
     }
 
-    void OnAmbienceVolumeChanged(float value)
+    void OnAmbienceClicked()
     {
-        if (BarAudioManager.Instance != null)
-            BarAudioManager.Instance.SetAmbienceVolume(value);
+        if (BarAudioManager.Instance == null)
+            return;
+
+        BarAudioManager.Instance.ToggleAmbience();
+        RefreshUI();
+    }
+
+    void OnSoundEffectsClicked()
+    {
+        BarAudioManager.Instance.ToggleSoundEffects();
+        RefreshUI();
+    }
+
+    void RefreshUI()
+    {
+        if (BarAudioManager.Instance == null)
+            return;
+
+        musicMutedOverlay.gameObject.SetActive(
+    !BarAudioManager.Instance.MusicEnabled);
+
+        ambienceMutedOverlay.gameObject.SetActive(
+            !BarAudioManager.Instance.AmbienceEnabled);
+
+        soundEffectsMutedOverlay.gameObject.SetActive(
+            !BarAudioManager.Instance.SoundEffectsEnabled);
     }
 }

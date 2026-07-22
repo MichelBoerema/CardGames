@@ -5,23 +5,7 @@ using Unity.Netcode;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
-public enum PlayingDeckCardValue
-{
-    Ace = 1,
-    Two = 2,
-    Three = 3,
-    Four = 4,
-    Five = 5,
-    Six = 6,
-    Seven = 7,
-    Eight = 8,
-    Nine = 9,
-    Ten = 10,
-    Jack = 11,
-    Queen = 12,
-    King = 13,
-    Joker = 99
-}
+
 
 public enum CardSuit
 {
@@ -84,41 +68,6 @@ public struct BusPlayerChoices
 
     public CardSuit suit;
     public HasSuitChoice hasSuit;
-}
-
-[System.Serializable]
-public struct PlayingCard : INetworkSerializable
-{
-    public PlayingDeckCardValue Value;
-    public CardSuit Suit;
-
-    public PlayingCard(PlayingDeckCardValue value, CardSuit suit)
-    {
-        Value = value;
-        Suit = suit;
-    }
-
-    public void NetworkSerialize<T>(BufferSerializer<T> serializer)
-        where T : IReaderWriter
-    {
-        serializer.SerializeValue(ref Value);
-        serializer.SerializeValue(ref Suit);
-    }
-    public override string ToString()
-    {
-        if (Value == PlayingDeckCardValue.Joker)
-            return "Joker";
-
-        return $"{Value} of {Suit}";
-    }
-
-    public bool IsRed =>
-    Suit == CardSuit.Hearts || Suit == CardSuit.Diamonds;
-
-    public bool IsBlack =>
-        Suit == CardSuit.Clubs || Suit == CardSuit.Spades;
-
-    public bool IsJoker => Value == PlayingDeckCardValue.Joker;
 }
 
 
@@ -384,7 +333,7 @@ public class BusGamemanager : NetworkBehaviour
             return false;
         }
 
-        var hand = player.playingCardHand;
+        var hand = player.hand;
         var choices = playerChoices[player.OwnerClientId];
 
         bool correct = false;

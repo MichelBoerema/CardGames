@@ -8,9 +8,7 @@ using UnityEngine.UI;
 
 public class Player : NetworkBehaviour
 {
-    public List<CardValue> hand = new List<CardValue>();
-
-    public List<PlayingCard> playingCardHand = new List<PlayingCard>();
+    public List<PlayingCard> hand = new();
 
 
     [Header("Punishment")]
@@ -149,8 +147,7 @@ public class Player : NetworkBehaviour
         }
     }
 
-
-    public virtual void AddCard(CardValue card)
+    public virtual void AddCard(PlayingCard card)
     {
         if (!IsServer) return;
 
@@ -158,11 +155,11 @@ public class Player : NetworkBehaviour
     }
 
     [ClientRpc]
-    void ReceiveCardClientRpc(CardValue card)
+    void ReceiveCardClientRpc(PlayingCard card)
     {
         hand.Add(card);
 
-        if (IsOwner)
+        if (IsOwner && UIManager.Instance != null)
         {
             UIManager.Instance.AddCardToHand(card);
         }
@@ -270,24 +267,6 @@ public class Player : NetworkBehaviour
     public void AddPoints(int _points)
     {
         points += _points;
-    }
-
-    public void AddCard(PlayingCard card)
-    {
-        if (!IsServer) return;
-
-        ReceivePlayingCardHandClientRpc(card);
-    }
-
-    [ClientRpc]
-    void ReceivePlayingCardHandClientRpc(PlayingCard card)
-    {
-        playingCardHand.Add(card);
-
-        if (IsOwner)
-        {
-            //BusUIManager.Instance.AddCardToHand(card);
-        }
     }
 
     [ClientRpc]
