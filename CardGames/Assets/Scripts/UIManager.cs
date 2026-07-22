@@ -20,6 +20,9 @@ public class UIManager : MonoBehaviour
 {
     public static UIManager Instance;
 
+    public AudioSource cardAudioS;
+    public AudioClip placeCardClip;
+
     [Header("Hand UI")]
     public Transform handUIParent;
     public GameObject cardButtonPrefab;
@@ -28,6 +31,7 @@ public class UIManager : MonoBehaviour
     [Header("Game UI")]
     public Text tableRankText;
     public Text lastClaims;
+    public Text playingPlayer;
     public Button leaveGameButton;
 
     [Header("Leave Game Confirmation")]
@@ -58,6 +62,7 @@ public class UIManager : MonoBehaviour
     public Image punishedAvatarImage;
     public GameObject punishedAvatarRoot;
     public Text punishedPlayerNameText;
+    public Text punishedPlayerChamberText;
     public GameObject gunObject;
     public Animator gunAnimator;
     public AudioSource gunAudio;
@@ -69,6 +74,7 @@ public class UIManager : MonoBehaviour
     public Animator preRoundIntroAnimator;
     public AudioSource preGunAudio;
     public AudioClip gunReloadClip;
+    public AudioClip deckShuffleClip;
     [SerializeField] private float preRoundIntroDuration = 3f;
 
     [Header("Table Rank Title")]
@@ -204,6 +210,7 @@ public class UIManager : MonoBehaviour
             }
         }
 
+        cardAudioS.PlayOneShot(placeCardClip);
         // Send played cards to server
         BluffGamemanager.Instance.PlayCardsServerRpc(playedValues.ToArray());
     }
@@ -351,6 +358,7 @@ public class UIManager : MonoBehaviour
         yield return PreRoundIntroRoutineInternal();
 
         ShowRoundStartPopup(deck);
+        cardAudioS.PlayOneShot(deckShuffleClip);
         yield return new WaitForSeconds(4f);
 
         ShowTableRankPopup(rank);
@@ -399,6 +407,7 @@ public class UIManager : MonoBehaviour
     public void ShowTableRankPopup(TableRank rank)
     {
         StartCoroutine(ShowTableRankWhenReady(rank));
+        nextPlayerInfoPanel.SetActive(false);
     }
 
     IEnumerator ShowTableRankWhenReady(TableRank rank)
@@ -463,19 +472,23 @@ public class UIManager : MonoBehaviour
     }
 
     public void ShowBluffRevealSequence(
-     Player punishedPlayer,
-     CardValue[] cards,
-     TableRank rank,
-     bool survived)
+    Player punishedPlayer,
+    int chamberIndex,
+    CardValue[] cards,
+    TableRank rank,
+    bool survived)
     {
         if (isPopupLocked)
             return;
 
-        StartCoroutine(BluffRevealSequence(punishedPlayer, cards, rank, survived));
+        StartCoroutine(
+            BluffRevealSequence(punishedPlayer, chamberIndex, cards, rank, survived)
+        );
     }
 
     IEnumerator BluffRevealSequence(
     Player punishedPlayer,
+    int chamberIndex,
     CardValue[] cards,
     TableRank rank,
     bool survived)
@@ -494,16 +507,16 @@ public class UIManager : MonoBehaviour
         descriptionText.text = "";
 
         yield return StartCoroutine(
-            ShowBluffSurvivalSequence(punishedPlayer, survived)
+            ShowBluffSurvivalSequence(punishedPlayer, chamberIndex, survived)
         );
 
         HidePopup();
-
         isPopupLocked = false;
     }
 
     IEnumerator ShowBluffSurvivalSequence(
     Player punishedPlayer,
+    int chamberIndex,
     bool survived)
     {
         infoPopup.SetActive(true);
@@ -514,14 +527,14 @@ public class UIManager : MonoBehaviour
         punishedAvatarImage.sprite = punishedPlayer.GetNetworkAvatar();
         punishedAvatarRoot.SetActive(true);
 
-        // Player Name
         punishedPlayerNameText.text = punishedPlayer.PlayerName.Value.ToString();
         punishedPlayerNameText.gameObject.SetActive(true);
 
+        punishedPlayerChamberText.text = $"{chamberIndex - 1}/6";
         gunObject.SetActive(true);
 
         yield return StartCoroutine(
-            PlayGunSequenceWithResultText(punishedPlayer, survived)
+            PlayGunSequenceWithResultText(punishedPlayer, chamberIndex, survived)
         );
 
         gunObject.SetActive(false);
@@ -531,13 +544,16 @@ public class UIManager : MonoBehaviour
 
     IEnumerator PlayGunSequenceWithResultText(
     Player punishedPlayer,
+    int chamberIndex,
     bool survived)
     {
+        gunAnimator.SetTrigger("Idle");
         yield return new WaitForSeconds(0.3f);
 
         gunAnimator.SetTrigger("Aim");
         yield return new WaitForSeconds(2f);
 
+        punishedPlayerChamberText.text = $"{chamberIndex}/6";
         if (survived)
         {
             gunAnimator.SetTrigger("Click");
@@ -608,6 +624,12 @@ public class UIManager : MonoBehaviour
         endServerButton.interactable = isHost;
     }
 
+    public void HideGameOver()
+    {
+        gameOverPanel.SetActive(false);
+        restartGameButton.gameObject.SetActive(false);
+        endServerButton.gameObject.SetActive(false);
+    }
     IEnumerator HidePopupAfterDelay(float delay)
     {
         yield return new WaitForSeconds(delay);
@@ -624,6 +646,11 @@ public class UIManager : MonoBehaviour
     public void UpdateLastClaims(FixedString32Bytes PlayerName, int amountClaimed, TableRank currentTableRank)
     {
         lastClaims.text = $"{PlayerName}\n claims \n{amountClaimed}X {currentTableRank}";
+    }
+
+    public void UpdatePlayingPlayer(FixedString32Bytes PlayerName)
+    {
+        playingPlayer.text = $"{PlayerName}'s turn...";
     }
 
     public void UpdateNextPlayerInfo(

@@ -1,6 +1,7 @@
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using Unity.Collections;
 using Unity.Netcode;
 using UnityEngine;
@@ -40,6 +41,7 @@ public class BluffGamemanager : NetworkBehaviour
     // Bluff tracking
     private int lastPlayedPlayerIndex = -1;
     private int bluffCallerIndex = -1;
+    private int punishedPlayerIndex = -1;
 
     // Bluff flow
     [SerializeField] private float bluffRevealDuration = 3f;
@@ -85,7 +87,7 @@ public class BluffGamemanager : NetworkBehaviour
             player.InitializeRoulette();
         }
     }
-
+    
     public void RegisterPlayer(Player player)
     {
         players.Add(player);
@@ -98,7 +100,10 @@ public class BluffGamemanager : NetworkBehaviour
         deck = GenerateDeck();
         ShuffleDeck(deck);
         ChooseRandomTableRank();
-        currentPlayerIndex = 0;
+        if (punishedPlayerIndex != -1)
+        {
+            currentPlayerIndex = 0;
+        }
 
         if (roundNumber == 0)
         {
@@ -154,6 +159,10 @@ public class BluffGamemanager : NetworkBehaviour
 
         currentPlayerIndex = nextIndex;
 
+        UpdatePlayingPlayerClientRpc(
+        players[currentPlayerIndex].PlayerName.Value
+        );
+
         for (int i = 0; i < players.Count; i++)
         {
             bool isTurn =
@@ -164,37 +173,6 @@ public class BluffGamemanager : NetworkBehaviour
             players[i].SetTurnClientRpc(isTurn);
         }
     }
-
-    //int GetPlayersWithCardsCount()
-    //{
-    //    int count = 0;
-
-    //    foreach (var player in players)
-    //    {
-    //        if (player.IsAlive && player.HasCardsInHand())
-    //            count++;
-    //    }
-
-    //    return count;
-    //}
-
-    //int GetLastPlayerWithCardsIndex()
-    //{
-    //    int index = -1;
-
-    //    for (int i = 0; i < players.Count; i++)
-    //    {
-    //        if (players[i].IsAlive && players[i].HasCardsInHand())
-    //        {
-    //            if (index != -1)
-    //                return -1;
-
-    //            index = i;
-    //        }
-    //    }
-
-    //    return index;
-    //}
 
     int GetNextPlayerWithCards(int startIndex)
     {
@@ -284,14 +262,15 @@ public class BluffGamemanager : NetworkBehaviour
 
     IEnumerator ResolveBluffSequence()
     {
-        int punishedIndex = DeterminePunishedPlayer();
-        Player punishedPlayer = players[punishedIndex];
+        punishedPlayerIndex = DeterminePunishedPlayer();
+        Player punishedPlayer = players[punishedPlayerIndex];
 
         punishedPlayer.PullTrigger(punishedPlayer.PlayerName.Value);
         bool survived = punishedPlayer.IsAlive;
 
         ShowBluffClientRpc(
             punishedPlayer.NetworkObject,
+            punishedPlayer.points,
             laatsteGespeeldeKaarten.ToArray(),
             currentTableRank,
             survived
@@ -299,7 +278,7 @@ public class BluffGamemanager : NetworkBehaviour
 
         yield break;
     }
-
+    
     public void EndGame()
     {
         if (gameOver)
@@ -316,12 +295,21 @@ public class BluffGamemanager : NetworkBehaviour
         if (!IsServer) return;
 
         gameOver = false;
+        roundNumber = 0;
+        isResolvingBluff = false;
+
+        lastPlayedPlayerIndex = -1;
+        bluffCallerIndex = -1;
+        players.Reverse();
+        currentPlayerIndex = 0;
 
         foreach (Player p in players)
         {
-            p.ClearHand();
-            p.ClearPoints();
+            p.ResetForNewGame();
         }
+
+        ResetRoundStateOnly();
+        HideGameOverClientRpc();
 
         StartGameServer();
     }
@@ -355,6 +343,12 @@ public class BluffGamemanager : NetworkBehaviour
         UIManager.Instance?.UpdateTableRank(rank);
     }
 
+    [ClientRpc]
+    void ResetLastClaimsClientRpc()
+    {
+        UIManager.Instance.lastClaims.text = "Waiting For\nFirst Claim";
+    }
+
     // ===== PLAY CLAIM =====
     [ClientRpc]
     void UpdateLastClaimsClientRpc(
@@ -363,6 +357,12 @@ public class BluffGamemanager : NetworkBehaviour
         TableRank rank)
     {
         UIManager.Instance?.UpdateLastClaims(playerName, amountClaimed, rank);
+    }
+
+    [ClientRpc]
+    void UpdatePlayingPlayerClientRpc(FixedString32Bytes playerName)
+    {
+        UIManager.Instance?.UpdatePlayingPlayer(playerName);
     }
 
     [ClientRpc]
@@ -407,16 +407,23 @@ public class BluffGamemanager : NetworkBehaviour
     // ===== BLUFF RESULT =====
     [ClientRpc]
     void ShowBluffClientRpc(
-        NetworkObjectReference playerRef,
-        CardValue[] cards,
-        TableRank rank,
-        bool survived)
+    NetworkObjectReference playerRef,
+    int chamberIndex,
+    CardValue[] cards,
+    TableRank rank,
+    bool survived)
     {
         if (!playerRef.TryGet(out NetworkObject obj)) return;
 
         Player player = obj.GetComponent<Player>();
         UIManager.Instance.HidePopup();
-        UIManager.Instance.ShowBluffRevealSequence(player, cards, rank, survived);
+        UIManager.Instance.ShowBluffRevealSequence(
+            player,
+            chamberIndex,
+            cards,
+            rank,
+            survived
+        );
     }
 
     [ServerRpc(RequireOwnership = false)]
@@ -440,6 +447,16 @@ public class BluffGamemanager : NetworkBehaviour
 
         ResetRoundStateOnly();
         isResolvingBluff = false;
+
+        if (punishedPlayerIndex != -1)
+        {
+            // Set index to one before punished player
+            currentPlayerIndex =
+                (punishedPlayerIndex - 1 + players.Count) % players.Count;
+        }
+
+        punishedPlayerIndex = -1;
+
         StartGameServer();
     }
 
@@ -454,7 +471,7 @@ public class BluffGamemanager : NetworkBehaviour
     [ClientRpc]
     void HideGameOverClientRpc()
     {
-        UIManager.Instance?.gameOverPanel.SetActive(false);
+        UIManager.Instance?.HideGameOver();
     }
 
     [ServerRpc(RequireOwnership = false)]
@@ -505,7 +522,7 @@ public class BluffGamemanager : NetworkBehaviour
         lastPlayedPlayerIndex = -1;
         bluffCallerIndex = -1;
 
-        UIManager.Instance.lastClaims.text = "Waiting For\nFirst Claim";
+        ResetLastClaimsClientRpc();
 
         foreach (Player player in players)
         {

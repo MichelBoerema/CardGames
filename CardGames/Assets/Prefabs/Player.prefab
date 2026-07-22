@@ -72,6 +72,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   ShowTopMostFoldoutHeaderGroup: 1
   hand: 
+  points: 0
   PlayerName:
     m_InternalValue:
       utf8LengthInBytes: 6
@@ -107,6 +108,6 @@ MonoBehaviour:
         byte0027: 0
         byte0028: 0
         byte0029: 0
-  avatarImage: {fileID: 0}
+  AvatarId:
+    m_InternalValue: 0
   defaultAvatar: {fileID: 21300002, guid: 1eaee135ce037439d925cee5e41ce026, type: 3}
-  points: 0

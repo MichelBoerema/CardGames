@@ -10,6 +10,9 @@ public class Player : NetworkBehaviour
 {
     public List<CardValue> hand = new List<CardValue>();
 
+    public List<PlayingCard> playingCardHand = new List<PlayingCard>();
+
+
     [Header("Punishment")]
     public int points;
     private int shotsUntilDeath;
@@ -17,6 +20,7 @@ public class Player : NetworkBehaviour
     public bool IsMyTurn { get; private set; }
     public bool IsAlive { get; set; } = true;
 
+    public RedBlackChoice CurrentChoice { get; private set; } = RedBlackChoice.None;
 
     public NetworkVariable<FixedString32Bytes> PlayerName =
         new NetworkVariable<FixedString32Bytes>(
@@ -146,7 +150,7 @@ public class Player : NetworkBehaviour
     }
 
 
-    public void AddCard(CardValue card)
+    public virtual void AddCard(CardValue card)
     {
         if (!IsServer) return;
 
@@ -162,6 +166,14 @@ public class Player : NetworkBehaviour
         {
             UIManager.Instance.AddCardToHand(card);
         }
+    }
+
+    public void ResetForNewGame()
+    {
+        ClearHand();
+        ClearPoints();
+        IsAlive = true;
+        InitializeRoulette(); // if you have roulette logic
     }
 
     public bool HasCardsInHand()
@@ -251,4 +263,50 @@ public class Player : NetworkBehaviour
             UIManager.Instance.UpdatePointsUI(newPoints, maxPoints);
         }
     }
+
+
+    #region allBusFunctionality
+
+    public void AddPoints(int _points)
+    {
+        points += _points;
+    }
+
+    public void AddCard(PlayingCard card)
+    {
+        if (!IsServer) return;
+
+        ReceivePlayingCardHandClientRpc(card);
+    }
+
+    [ClientRpc]
+    void ReceivePlayingCardHandClientRpc(PlayingCard card)
+    {
+        playingCardHand.Add(card);
+
+        if (IsOwner)
+        {
+            //BusUIManager.Instance.AddCardToHand(card);
+        }
+    }
+
+    [ClientRpc]
+    public void OnRound1CorrectClientRpc(PlayingCard card)
+    {
+        BusGamemanager.Instance?.ShowPlayerSelectForPlayer();
+    }
+
+    [ClientRpc]
+    public void OnRound1WrongClientRpc(PlayingCard card)
+    {
+        BusUIManager.Instance?.ShowPointReceivedPopup(name, points);
+    }
+
+    [ClientRpc]
+    public void OnRound2WrongClientRpc(PlayingCard card)
+    {
+        // UI: show card + "Wrong! Take 1 drink"
+    }
+
+    #endregion
 }

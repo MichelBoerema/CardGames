@@ -131,6 +131,6 @@ public class Card : MonoBehaviour
 
     public void HighlightCard(bool isCorrect)
     {
-        background.color = isCorrect ? Color.green : Color.red;
+        background.color = isCorrect ? Color.green : Color.paleVioletRed;
     }
 }

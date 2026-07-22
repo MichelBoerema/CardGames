@@ -357,8 +357,8 @@ public class LobbyManager : MonoBehaviour
         if (chosenName.Length > 16)
             chosenName = chosenName.Substring(0, 16);
 
-        //PlayerPrefs.SetString("PlayerName", chosenName);
-        //PlayerPrefs.Save();
+        PlayerPrefs.SetString("PlayerName", chosenName);
+        PlayerPrefs.Save();
 
         playerSetupRoot.SetActive(false);
         playerListRoot.SetActive(true);
