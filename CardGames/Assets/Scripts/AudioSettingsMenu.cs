@@ -13,6 +13,14 @@ public class AudioSettingsMenu : MonoBehaviour
     [SerializeField] private Image ambienceMutedOverlay;
     [SerializeField] private Image soundEffectsMutedOverlay;
 
+    [Header("Toggle Images")]
+    [SerializeField] private Image musicToggleImage;
+    [SerializeField] private Image ambienceToggleImage;
+    [SerializeField] private Image soundEffectsToggleImage;
+
+    [SerializeField] private Sprite toggleOnSprite;
+    [SerializeField] private Sprite toggleOffSprite;
+
     [Header("Menu Root")]
     [SerializeField] private GameObject menuRoot;
 
@@ -83,13 +91,19 @@ public class AudioSettingsMenu : MonoBehaviour
         if (BarAudioManager.Instance == null)
             return;
 
-        musicMutedOverlay.gameObject.SetActive(
-    !BarAudioManager.Instance.MusicEnabled);
+        musicToggleImage.sprite = BarAudioManager.Instance.MusicEnabled
+            ? toggleOnSprite
+            : toggleOffSprite;
+        musicMutedOverlay.gameObject.SetActive(!BarAudioManager.Instance.MusicEnabled);
 
-        ambienceMutedOverlay.gameObject.SetActive(
-            !BarAudioManager.Instance.AmbienceEnabled);
+        ambienceToggleImage.sprite = BarAudioManager.Instance.AmbienceEnabled
+            ? toggleOnSprite
+            : toggleOffSprite;
+        ambienceMutedOverlay.gameObject.SetActive(!BarAudioManager.Instance.AmbienceEnabled);
 
-        soundEffectsMutedOverlay.gameObject.SetActive(
-            !BarAudioManager.Instance.SoundEffectsEnabled);
+        soundEffectsToggleImage.sprite = BarAudioManager.Instance.SoundEffectsEnabled
+            ? toggleOnSprite
+            : toggleOffSprite;
+        soundEffectsMutedOverlay.gameObject.SetActive(!BarAudioManager.Instance.SoundEffectsEnabled);
     }
 }
