@@ -63,6 +63,7 @@ public class Player : NetworkBehaviour
             if (UIManager.Instance != null)
             {
                 UIManager.Instance.SetLocalPlayer(this);
+                UIManager.Instance.SetMyPlayerName(PlayerName.Value.ToString());
             }
         }
 
@@ -129,6 +130,11 @@ public class Player : NetworkBehaviour
     private void OnPlayerDataChanged(FixedString32Bytes oldVal, FixedString32Bytes newVal)
     {
         LobbyManager.Instance?.RequestPlayerListRefresh();
+
+        if (IsOwner && UIManager.Instance != null)
+        {
+            UIManager.Instance.SetMyPlayerName(newVal.ToString());
+        }
     }
 
     private void OnAvatarChanged(int oldVal, int newVal)
@@ -145,6 +151,15 @@ public class Player : NetworkBehaviour
         {
             UIManager.Instance.SetPlayerTurn(isMyTurn);
         }
+    }
+
+    [ClientRpc]
+    public void SetMyNameUIClientRpc()
+    {
+        if (!IsOwner)
+            return;
+
+        UIManager.Instance?.SetMyPlayerName(PlayerName.Value.ToString());
     }
 
     public virtual void AddCard(PlayingCard card)
@@ -260,7 +275,6 @@ public class Player : NetworkBehaviour
             UIManager.Instance.UpdatePointsUI(newPoints, maxPoints);
         }
     }
-
 
     #region allBusFunctionality
 

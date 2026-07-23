@@ -89,6 +89,10 @@ public class BluffGamemanager : NetworkBehaviour
         if (gameOver)
             return;
 
+        foreach (Player player in players)
+        {
+            player.SetMyNameUIClientRpc();
+        }
         deck = GenerateDeck();
         ShuffleDeck(deck);
         ChooseRandomTableRank();

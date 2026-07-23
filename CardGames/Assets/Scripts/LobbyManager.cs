@@ -39,7 +39,12 @@ public class LobbyManager : MonoBehaviour
     public GameObject joinCodeConfirmButton;  // button that calls JoinGame
 
     [Header("Scene Selection")]
-    public Dropdown sceneDropdown;
+    public Button selectGamemodeButton;
+    public GameObject gamemodePanel;
+    public Text selectedGamemodeText;
+
+    public Button bluffButton;
+    public Button busButton;
     private NetworkVariable<FixedString32Bytes> selectedScene =
     new NetworkVariable<FixedString32Bytes>(
         "BluffGame",
@@ -87,6 +92,14 @@ public class LobbyManager : MonoBehaviour
         ClientBackToPlayerSetupButton.onClick.AddListener(OnClientBackToPlayerSetupSelected);
         reloadLobbyButton.onClick.AddListener(ReloadLobbyScene);
         joinCodeConfirmButton.GetComponent<Button>().onClick.AddListener(JoinGame);
+
+        selectGamemodeButton.onClick.AddListener(OpenGamemodePanel);
+
+        bluffButton.onClick.AddListener(() => SelectGamemode("BLUFF","BluffGame"));
+        busButton.onClick.AddListener(() => SelectGamemode("BUSSEN", "BusGame"));
+
+        gamemodePanel.SetActive(false);
+        selectedGamemodeText.text = "CURRENT: BLUFF";
 
         NetworkManager.Singleton.OnClientConnectedCallback += OnClientConnected;
         NetworkManager.Singleton.OnClientDisconnectCallback += OnClientDisconnected;
@@ -267,11 +280,7 @@ public class LobbyManager : MonoBehaviour
 
         ChooseName();
 
-        sceneDropdown.gameObject.SetActive(true);
-        sceneDropdown.onValueChanged.AddListener(OnSceneDropdownChanged);
-
-        // Initialize with current value
-        OnSceneDropdownChanged(sceneDropdown.value);
+        selectGamemodeButton.gameObject.SetActive(true);
 
         hostButton.interactable = false;
         joinButton.interactable = false;
@@ -292,15 +301,20 @@ public class LobbyManager : MonoBehaviour
         UpdatePlayerList();
     }
 
-    void OnSceneDropdownChanged(int index)
+    void OpenGamemodePanel()
+    {
+        gamemodePanel.SetActive(true);
+    }
+
+    void SelectGamemode(string displayName, string sceneName)
     {
         if (!NetworkManager.Singleton.IsServer)
             return;
 
-        string sceneName = sceneDropdown.options[index].text;
         selectedScene.Value = sceneName;
+        selectedGamemodeText.text = $"CURRENT: {displayName}";
 
-        Debug.Log($"Selected scene: {sceneName}");
+        gamemodePanel.SetActive(false);
     }
 
     public async void JoinGame()
@@ -336,7 +350,7 @@ public class LobbyManager : MonoBehaviour
         joinCodeDisplayRoot.SetActive(true);
         hostGameButtonRoot.SetActive(false);
         clientGameButtonRoot.SetActive(false);
-        sceneDropdown.gameObject.SetActive(false);
+        selectGamemodeButton.gameObject.SetActive(false);
 
         joinCodeDisplay.text = $"{joinCode}";
 
@@ -354,8 +368,10 @@ public class LobbyManager : MonoBehaviour
         if (string.IsNullOrEmpty(chosenName))
             chosenName = $"Player {Random.Range(1000, 9999)}";
 
-        if (chosenName.Length > 16)
-            chosenName = chosenName.Substring(0, 16);
+        const int MAX_NAME_LENGTH = 20;
+
+        if (chosenName.Length > MAX_NAME_LENGTH)
+            chosenName = chosenName.Substring(0, MAX_NAME_LENGTH);
 
         PlayerPrefs.SetString("PlayerName", chosenName);
         PlayerPrefs.Save();

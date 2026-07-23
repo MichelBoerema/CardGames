@@ -32,6 +32,7 @@ public class UIManager : MonoBehaviour
     public Text tableRankText;
     public Text lastClaims;
     public Text playingPlayer;
+    public Text myPlayerNameText;
     public Button leaveGameButton;
 
     [Header("Leave Game Confirmation")]
@@ -46,6 +47,10 @@ public class UIManager : MonoBehaviour
     public Text nextPlayerCardsLeftText;
     public Text nextPlayerPointsAmount;
     [SerializeField] private Sprite fallbackAvatar;
+
+    [Header("Cards Left")]
+    [SerializeField] private Image cardsLeftImage;
+    [SerializeField] private Sprite[] cardsLeftSprites;
 
     [Header("Popup")]
     public GameObject infoPopup;
@@ -668,6 +673,11 @@ public class UIManager : MonoBehaviour
     #endregion
 
     #region UI
+    public void SetMyPlayerName(string playerName)
+    {
+        myPlayerNameText.text = playerName;
+    }
+
     public void UpdatePointsUI(int newPoints, int maxPoints)
     {
         pointsText.text = $"{newPoints}/{maxPoints}";
@@ -688,18 +698,27 @@ public class UIManager : MonoBehaviour
     int avatarId,
     int cardsLeft,
     int points
-    )
+)
     {
         nextPlayerInfoPanel.SetActive(true);
 
         nextPlayerNameText.text = playerName.ToString();
-        nextPlayerCardsLeftText.text = cardsLeft.ToString();
+        //nextPlayerCardsLeftText.text = cardsLeft.ToString();
         nextPlayerPointsAmount.text = $"{points}/6";
 
         Sprite avatar = AvatarDatabase.Instance?.GetAvatar(avatarId);
         nextPlayerAvatarImage.sprite = avatar != null
             ? avatar
             : fallbackAvatar;
+
+        if (cardsLeft == 0)
+        {
+            cardsLeftImage.sprite = null;
+        }
+        else if (cardsLeft > 0 && cardsLeft < cardsLeftSprites.Length)
+        {
+            cardsLeftImage.sprite = cardsLeftSprites[cardsLeft - 1];
+        }
     }
 
     #endregion
