@@ -16,6 +16,18 @@ public class BusUIManager : MonoBehaviour
 
     private Action<ulong> onPlayerSelected;
 
+    [Header("Current Turn")]
+    [SerializeField] private GameObject turnPanel;
+    [SerializeField] private Text turnText;
+
+    [Header("Player Hand")]
+    [SerializeField] private Transform handParent;
+    [SerializeField] private Transform busHandParent;
+    [SerializeField] private GameObject handCardPrefab;
+    [SerializeField] private GameObject busHandCardPrefab;
+
+    private GameObject currentHandPrefab;
+
     [Header("Point Popup")]
     [SerializeField] private GameObject pointPopupPanel;
     [SerializeField] private Text pointPopupText;
@@ -50,6 +62,18 @@ public class BusUIManager : MonoBehaviour
     [SerializeField] private Button yesButton;
     [SerializeField] private Button noButton;
 
+    [Header("Bus UI")]
+    [SerializeField] private GameObject busRoot;
+
+    [SerializeField] private Transform busCardParent;
+    [SerializeField] private GameObject busCardPrefab;
+
+    [SerializeField] private Button skipBusButton;
+    private readonly List<GameObject> busBacks = new();
+    private readonly List<Card> busCards = new();
+
+    [SerializeField] private GameObject cardBackPrefab;
+
     private void Awake()
     {
         if (Instance == null)
@@ -57,7 +81,26 @@ public class BusUIManager : MonoBehaviour
         else
             Destroy(gameObject);
 
+        currentHandPrefab = handCardPrefab;
+
         pointPopupPanel.SetActive(false);
+    }
+
+    public void ShowCurrentTurn(string playerName)
+    {
+        turnPanel.SetActive(true);
+        turnText.text = $"{playerName}'s Turn";
+    }
+    public void AddCardToHand(PlayingCard card)
+    {
+        GameObject cardObj = Instantiate(currentHandPrefab, handParent);
+
+        Card ui = cardObj.GetComponent<Card>();
+        ui.Setup(card);
+    }
+    public void HideCurrentTurn()
+    {
+        turnPanel.SetActive(false);
     }
 
     public void ShowResultPopup(bool correct)
@@ -135,6 +178,9 @@ public class BusUIManager : MonoBehaviour
         List<Player> players,
         Action<ulong> onSelected)
     {
+        Debug.Log("Opening player select UI");
+        Debug.Log($"Selectable players: {players.Count}");
+
         playerSelectRoot.SetActive(true);
         onPlayerSelected = onSelected;
 
@@ -143,6 +189,8 @@ public class BusUIManager : MonoBehaviour
 
         foreach (var player in players)
         {
+            Debug.Log($"Adding button for {player.PlayerName.Value}");
+
             GameObject btnObj = Instantiate(playerButtonPrefab, playerButtonParent);
             Button button = btnObj.GetComponent<Button>();
             Text text = btnObj.GetComponentInChildren<Text>();
@@ -234,5 +282,88 @@ public class BusUIManager : MonoBehaviour
             suitRoot.SetActive(false);
             onChoice(HasSuitChoice.No);
         });
+    }
+
+    public void CreateBus(List<BusRow> rows)
+    {
+        busRoot.SetActive(true);
+
+        foreach (Transform row in busCardParent)
+        {
+            foreach (Transform child in row)
+                Destroy(child.gameObject);
+        }
+
+        busCards.Clear();
+
+        for (int rowIndex = 0; rowIndex < rows.Count; rowIndex++)
+        {
+            Transform rowTransform = busCardParent.GetChild(rowIndex);
+
+            foreach (PlayingCard card in rows[rowIndex].cards)
+            {
+                // Create the visible card back
+                GameObject back = Instantiate(cardBackPrefab, rowTransform);
+                busBacks.Add(back);
+
+                // Create the real card
+                GameObject front = Instantiate(busCardPrefab, rowTransform);
+
+                Card ui = front.GetComponent<Card>();
+                ui.Setup(card);
+
+                front.SetActive(false);
+
+                busCards.Add(ui);
+            }
+        }
+    }
+
+    public void RevealBusCard(int row, int index)
+    {
+        int flatIndex = 0;
+
+        for (int i = 0; i < row; i++)
+            flatIndex += 4 - i;
+
+        flatIndex += index;
+
+        StartCoroutine(FlipCard(flatIndex));
+    }
+
+    IEnumerator FlipCard(int index)
+    {
+        GameObject back = busBacks[index];
+        Transform t = back.transform;
+
+        // Shrink the back
+        while (t.localScale.x > 0)
+        {
+            t.localScale -= new Vector3(Time.deltaTime * 6f, 0f, 0f);
+            yield return null;
+        }
+
+        Destroy(back);
+
+        GameObject front = busCards[index].gameObject;
+        front.SetActive(true);
+
+        t = front.transform;
+        t.localScale = new Vector3(0f, 1f, 1f);
+
+        while (t.localScale.x < 1f)
+        {
+            t.localScale += new Vector3(Time.deltaTime * 6f, 0f, 0f);
+            yield return null;
+        }
+
+        t.localScale = Vector3.one;
+    }
+
+    public void ShowBusPlayChoice(
+    List<PlayingCard> hand,
+    PlayingCard busCard)
+    {
+        // TODO
     }
 }

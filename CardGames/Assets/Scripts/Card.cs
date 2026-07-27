@@ -73,29 +73,17 @@ public class Card : MonoBehaviour
     [SerializeField] private Image background;
     [SerializeField] private Image cardArt;
 
-    [Header("Card Sprites per Suit")]
-    public Sprite kingHeartsSprite;
-    public Sprite kingDiamondsSprite;
-    public Sprite kingClubsSprite;
-    public Sprite kingSpadesSprite;
+    [Header("Playing Cards")]
+    [SerializeField] private Sprite[] cardSprites = new Sprite[52];
 
-    public Sprite queenHeartsSprite;
-    public Sprite queenDiamondsSprite;
-    public Sprite queenClubsSprite;
-    public Sprite queenSpadesSprite;
-
-    public Sprite aceHeartsSprite;
-    public Sprite aceDiamondsSprite;
-    public Sprite aceClubsSprite;
-    public Sprite aceSpadesSprite;
-
-    [Header("Joker Sprites")]
-    public Sprite jokerRedSprite;
-    public Sprite jokerBlackSprite;
+    [Header("Jokers")]
+    [SerializeField] private Sprite jokerRedSprite;
+    [SerializeField] private Sprite jokerBlackSprite;
 
     void Awake()
     {
-        button.onClick.AddListener(ToggleSelected);
+        if(button != null)
+            button.onClick.AddListener(ToggleSelected);
     }
 
     public void Setup(PlayingCard card)
@@ -135,28 +123,17 @@ public class Card : MonoBehaviour
 
     Sprite GetCardSprite()
     {
-        if (playingCard.Value == PlayingDeckCardValue.Joker)
-            return jokerColor == JokerColor.Red ? jokerRedSprite : jokerBlackSprite;
-
-        return (playingCard.Value, playingCard.Suit) switch
+        if (playingCard.IsJoker)
         {
-            (PlayingDeckCardValue.King, CardSuit.Hearts) => kingHeartsSprite,
-            (PlayingDeckCardValue.King, CardSuit.Diamonds) => kingDiamondsSprite,
-            (PlayingDeckCardValue.King, CardSuit.Clubs) => kingClubsSprite,
-            (PlayingDeckCardValue.King, CardSuit.Spades) => kingSpadesSprite,
+            return jokerColor == JokerColor.Red
+                ? jokerRedSprite
+                : jokerBlackSprite;
+        }
 
-            (PlayingDeckCardValue.Queen, CardSuit.Hearts) => queenHeartsSprite,
-            (PlayingDeckCardValue.Queen, CardSuit.Diamonds) => queenDiamondsSprite,
-            (PlayingDeckCardValue.Queen, CardSuit.Clubs) => queenClubsSprite,
-            (PlayingDeckCardValue.Queen, CardSuit.Spades) => queenSpadesSprite,
+        int index = ((int)playingCard.Suit * 13)
+                  + ((int)playingCard.Value - 1);
 
-            (PlayingDeckCardValue.Ace, CardSuit.Hearts) => aceHeartsSprite,
-            (PlayingDeckCardValue.Ace, CardSuit.Diamonds) => aceDiamondsSprite,
-            (PlayingDeckCardValue.Ace, CardSuit.Clubs) => aceClubsSprite,
-            (PlayingDeckCardValue.Ace, CardSuit.Spades) => aceSpadesSprite,
-
-            _ => null
-        };
+        return cardSprites[index];
     }
 
     public void HighlightCard(bool isCorrect)

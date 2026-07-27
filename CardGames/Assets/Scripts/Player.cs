@@ -178,6 +178,10 @@ public class Player : NetworkBehaviour
         {
             UIManager.Instance.AddCardToHand(card);
         }
+        if (IsOwner && BusUIManager.Instance != null)
+        {
+            BusUIManager.Instance.AddCardToHand(card);
+        }
     }
 
     public void ResetForNewGame()

@@ -69,7 +69,11 @@ public struct BusPlayerChoices
     public CardSuit suit;
     public HasSuitChoice hasSuit;
 }
-
+public class BusRow
+{
+    public List<PlayingCard> cards = new();
+    public int[] pointValues;
+}
 
 public class BusGamemanager : NetworkBehaviour
 {
@@ -77,15 +81,29 @@ public class BusGamemanager : NetworkBehaviour
 
     public List<Player> players = new();
     private int currentPlayerIndex = 0;
-    private int pendingPointRewards = 0;
 
     private BusRoundPhase currentPhase;
     private BusRound currentRound = BusRound.RedBlack;
-    private Dictionary<ulong, BusPlayerChoices> playerChoices = new();
+    private BusPlayerChoices currentChoice;
 
-    private Dictionary<ulong, bool> roundCorrect = new();
     private Dictionary<ulong, int> pointsReceivedThisRound = new();
-    private HashSet<ulong> playersWhoMustGivePoint = new();
+
+    int[] busPointValues =
+    {
+    1,1,1,2,
+    2,2,4,
+    4,8,
+    16
+    };
+    private List<BusRow> busRows = new();
+
+    private int currentRow = 0;
+    private int currentCard = 0;
+
+    private PlayingCard currentBusCard;
+    private int currentBusCardPoints;
+
+    private bool busActive = false;
 
     [Header("Deck Settings")]
     [SerializeField] private int jokerCount = 2;
@@ -138,58 +156,283 @@ public class BusGamemanager : NetworkBehaviour
         Debug.Log($"Deck before sending to clients: {deckLog}");
         ShuffleDeck(deck);
 
-        playerChoices.Clear();
-        foreach (var player in players)
+        currentPlayerIndex = 0;
+        currentRound = BusRound.RedBlack;
+
+        foreach (Player player in players)
         {
-            playerChoices[player.OwnerClientId] = new BusPlayerChoices();
+            pointsReceivedThisRound[player.OwnerClientId] = 0;
         }
 
-        StartRound(currentRound);
+        StartTurn();
     }
 
+    void StartTurn()
+    {
+        currentChoice = new BusPlayerChoices();
+
+        Player currentPlayer = players[currentPlayerIndex];
+
+        ShowCurrentTurnClientRpc(currentPlayer.PlayerName.Value);
+
+        switch (currentRound)
+        {
+            case BusRound.RedBlack:
+                ShowRedBlackChoiceClientRpc(currentPlayer.OwnerClientId);
+                break;
+
+            case BusRound.HigherLower:
+                ShowHigherLowerChoiceClientRpc(currentPlayer.OwnerClientId);
+                break;
+
+            case BusRound.InsideOutside:
+                ShowInsideOutsideChoiceClientRpc(currentPlayer.OwnerClientId);
+                break;
+
+            case BusRound.SuitGuess:
+                ShowSuitChoiceClientRpc(currentPlayer.OwnerClientId);
+                break;
+        }
+    }
+
+    void NextTurn()
+    {
+        currentPlayerIndex++;
+
+        if (currentPlayerIndex >= players.Count)
+        {
+            currentPlayerIndex = 0;
+            AdvanceRound();
+            return;
+        }
+
+        StartTurn();
+    }
     void AdvanceRound()
     {
+        currentChoice = new BusPlayerChoices();
+
         if (currentRound < BusRound.SuitGuess)
         {
             currentRound++;
-            StartRound(currentRound);
+            StartTurn();
+            return;
+        }
+
+        StartBus();
+    }
+
+    private void ResolveCurrentPlayerTurn(ulong playerId)
+    {
+        Player player = players[currentPlayerIndex];
+
+        // Extra safety check
+        if (player.OwnerClientId != playerId)
+            return;
+
+        bool correct = ResolveBusRound(player);
+
+        Debug.Log($"Correct = {correct}");
+
+        //RevealCardClientRpc(targetPlayerId, newCard);
+        ShowRoundResultClientRpc(player.OwnerClientId, correct);
+
+        if (correct)
+        {
+            Debug.Log($"Showing player select for {player.OwnerClientId}");
+            ShowPlayerSelectClientRpc(player.OwnerClientId);
         }
         else
         {
-            Debug.Log("Rounds complete, Start bus!");
-            // End game or start bus punishment phase
+            // Player punishes themselves.
+            player.AddPoints(1);
+            pointsReceivedThisRound[player.OwnerClientId]++;
+
+            NextTurn();
         }
     }
 
-    void StartRound(BusRound round)
+    void StartBus()
     {
-        currentPhase = BusRoundPhase.Choosing;
+        busActive = true;
 
-        roundCorrect.Clear();
-        pointsReceivedThisRound.Clear();
-        playersWhoMustGivePoint.Clear();
+        busRows.Clear();
 
-        foreach (var player in players)
+        int[][] values =
         {
-            switch (round)
+        new []{1,1,1,2},
+        new []{2,2,4},
+        new []{4,8},
+        new []{16}
+    };
+
+        foreach (var rowValues in values)
+        {
+            BusRow row = new BusRow();
+
+            row.pointValues = rowValues;
+
+            for (int i = 0; i < rowValues.Length; i++)
             {
-                case BusRound.RedBlack:
-                    ShowRedBlackChoiceClientRpc(player.OwnerClientId);
-                    break;
-
-                case BusRound.HigherLower:
-                    ShowHigherLowerChoiceClientRpc(player.OwnerClientId);
-                    break;
-
-                case BusRound.InsideOutside:
-                    ShowInsideOutsideChoiceClientRpc(player.OwnerClientId);
-                    break;
-
-                case BusRound.SuitGuess:
-                    ShowSuitChoiceClientRpc(player.OwnerClientId);
-                    break;
+                row.cards.Add(deck[0]);
+                deck.RemoveAt(0);
             }
+
+            busRows.Add(row);
         }
+        CreateBusClientRpc();
+
+        currentRow = 0;
+        currentCard = 0;
+
+        RevealNextBusCard();
+    }
+
+    void RevealNextBusCard()
+    {
+        BusRow row = busRows[currentRow];
+
+        currentBusCard = row.cards[currentCard];
+        currentBusCardPoints = row.pointValues[currentCard];
+
+        ShowBusCardClientRpc(currentBusCard,
+                             currentRow,
+                             currentCard);
+
+        currentPlayerIndex = 0;
+
+        StartBusPlayerTurn();
+    }
+
+    void StartBusPlayerTurn()
+    {
+        Player player = players[currentPlayerIndex];
+
+        ShowCurrentTurnClientRpc(player.PlayerName.Value);
+
+        ShowBusPlayChoiceClientRpc(player.OwnerClientId);
+    }
+
+    void SkipBusTurn()
+    {
+        NextBusPlayer();
+    }
+
+    void NextBusPlayer()
+    {
+        currentPlayerIndex++;
+
+        if (currentPlayerIndex >= players.Count)
+        {
+            currentCard++;
+
+            BusRow row = busRows[currentRow];
+
+            if (currentCard >= row.cards.Count)
+            {
+                currentRow++;
+                currentCard = 0;
+
+                if (currentRow >= busRows.Count)
+                {
+                    //EndBus();
+                    return;
+                }
+            }
+
+            RevealNextBusCard();
+            return;
+        }
+
+        StartBusPlayerTurn();
+    }
+
+    bool CanPlay(PlayingCard handCard, PlayingCard busCard)
+    {
+        return
+            handCard.Value == busCard.Value &&
+            handCard.Suit != busCard.Suit;
+    }
+
+    void AddPointReceived(ulong id)
+    {
+        if (!pointsReceivedThisRound.ContainsKey(id))
+            pointsReceivedThisRound[id] = 0;
+
+        pointsReceivedThisRound[id]++;
+    }
+
+    [ServerRpc(RequireOwnership = false)]
+    public void SubmitRedBlackChoiceServerRpc(
+    RedBlackChoice choice,
+    ServerRpcParams rpcParams = default)
+    {
+        ulong id = rpcParams.Receive.SenderClientId;
+
+        currentChoice.redBlack = choice;
+        ResolveCurrentPlayerTurn(id);
+    }
+    [ServerRpc(RequireOwnership = false)]
+    void SubmitHigherLowerChoiceServerRpc(
+    HigherLowerChoice choice,
+    ServerRpcParams rpcParams = default)
+    {
+        ulong id = rpcParams.Receive.SenderClientId;
+
+        currentChoice.higherLower = choice;
+        ResolveCurrentPlayerTurn(id);
+    }
+    [ServerRpc(RequireOwnership = false)]
+    void SubmitInsideOutsideChoiceServerRpc(
+    InsideOutsideChoice choice,
+    ServerRpcParams rpcParams = default)
+    {
+        ulong id = rpcParams.Receive.SenderClientId;
+
+        currentChoice.insideOutside = choice;
+        ResolveCurrentPlayerTurn(id);
+    }
+    [ServerRpc(RequireOwnership = false)]
+    void SubmitSuitChoiceServerRpc(
+    HasSuitChoice choice,
+    ServerRpcParams rpcParams = default)
+    {
+        ulong id = rpcParams.Receive.SenderClientId;
+
+        currentChoice.hasSuit = choice;
+        ResolveCurrentPlayerTurn(id);
+    }
+
+    [ClientRpc]
+    void ShowBusCardClientRpc(PlayingCard card, int row, int index)
+    {
+        BusUIManager.Instance.RevealBusCard(row, index);
+    }
+
+    [ClientRpc]
+    void ShowBusPlayChoiceClientRpc(ulong targetClientId)
+    {
+        if (NetworkManager.Singleton.LocalClientId != targetClientId)
+            return;
+
+        Player me = FindObjectsOfType<Player>()
+            .First(p => p.IsOwner);
+
+        BusUIManager.Instance.ShowBusPlayChoice(
+            me.hand,
+            currentBusCard);
+    }
+
+    [ClientRpc]
+    void CreateBusClientRpc()
+    {
+        BusUIManager.Instance.CreateBus(busRows);
+    }
+
+    [ClientRpc]
+    void ShowCurrentTurnClientRpc(FixedString32Bytes playerName)
+    {
+        BusUIManager.Instance.ShowCurrentTurn(playerName.ToString());
     }
 
     [ClientRpc]
@@ -248,83 +491,6 @@ public class BusGamemanager : NetworkBehaviour
         });
     }
 
-    [ServerRpc(RequireOwnership = false)]
-    public void SubmitRedBlackChoiceServerRpc(
-    RedBlackChoice choice,
-    ServerRpcParams rpcParams = default)
-    {
-        ulong id = rpcParams.Receive.SenderClientId;
-
-        var c = playerChoices[id];
-        c.redBlack = choice;
-        playerChoices[id] = c;
-
-        if (AllPlayersHaveChoice(c => c.redBlack != RedBlackChoice.None))
-        {
-            ResolveCurrentRoundForAll();
-        }
-    }
-
-    [ServerRpc(RequireOwnership = false)]
-    void SubmitHigherLowerChoiceServerRpc(
-    HigherLowerChoice choice,
-    ServerRpcParams rpcParams = default)
-    {
-        ulong id = rpcParams.Receive.SenderClientId;
-
-        var c = playerChoices[id];
-        c.higherLower = choice;
-        playerChoices[id] = c;
-
-        if (AllPlayersHaveChoice(c => c.higherLower != HigherLowerChoice.None))
-        {
-            ResolveCurrentRoundForAll();
-        }
-    }
-
-    [ServerRpc(RequireOwnership = false)]
-    void SubmitInsideOutsideChoiceServerRpc(
-    InsideOutsideChoice choice,
-    ServerRpcParams rpcParams = default)
-    {
-        ulong senderId = rpcParams.Receive.SenderClientId;
-
-        var c = playerChoices[senderId];
-        c.insideOutside = choice;
-        playerChoices[senderId] = c;
-
-        if (AllPlayersHaveChoice(c => c.insideOutside != InsideOutsideChoice.None))
-        {
-            ResolveCurrentRoundForAll();
-        }
-    }
-
-    [ServerRpc(RequireOwnership = false)]
-    void SubmitSuitChoiceServerRpc(
-    HasSuitChoice choice,
-    ServerRpcParams rpcParams = default)
-    {
-        ulong senderId = rpcParams.Receive.SenderClientId;
-
-        var c = playerChoices[senderId];
-        c.hasSuit = choice;
-        playerChoices[senderId] = c;
-
-        if (AllPlayersHaveChoice(c => c.hasSuit != HasSuitChoice.None))
-        {
-            ResolveCurrentRoundForAll();
-        }
-    }
-    bool AllPlayersHaveChoice(System.Func<BusPlayerChoices, bool> predicate)
-    {
-        foreach (var p in players)
-        {
-            if (!predicate(playerChoices[p.OwnerClientId]))
-                return false;
-        }
-        return true;
-    }
-
     bool ResolveBusRound(Player player)
     {
         if (deck.Count == 0)
@@ -334,58 +500,54 @@ public class BusGamemanager : NetworkBehaviour
         }
 
         var hand = player.hand;
-        var choices = playerChoices[player.OwnerClientId];
 
         bool correct = false;
+
+        PlayingCard drawnCard = deck[0];
+        deck.RemoveAt(0);
 
         switch (currentRound)
         {
             case BusRound.RedBlack:
                 {
-                    PlayingCard card = deck[0];
-
-                    if (!card.IsJoker)
+                    if (!drawnCard.IsJoker)
                     {
                         correct =
-                            (choices.redBlack == RedBlackChoice.Red && card.IsRed) ||
-                            (choices.redBlack == RedBlackChoice.Black && card.IsBlack);
+                            (currentChoice.redBlack == RedBlackChoice.Red && drawnCard.IsRed) ||
+                            (currentChoice.redBlack == RedBlackChoice.Black && drawnCard.IsBlack);
                     }
                     break;
                 }
 
             case BusRound.HigherLower:
                 {
-                    PlayingCard card = deck[0];
-
-                    if (!card.IsJoker)
+                    if (!drawnCard.IsJoker)
                     {
                         int prev = (int)hand[0].Value;
-                        int next = (int)card.Value;
+                        int next = (int)drawnCard.Value;
 
                         correct =
-                            (choices.higherLower == HigherLowerChoice.Higher && next > prev) ||
-                            (choices.higherLower == HigherLowerChoice.Lower && next < prev);
+                            (currentChoice.higherLower == HigherLowerChoice.Higher && next > prev) ||
+                            (currentChoice.higherLower == HigherLowerChoice.Lower && next < prev);
                     }
                     break;
                 }
 
             case BusRound.InsideOutside:
                 {
-                    PlayingCard card = deck[0];
-
-                    if (!card.IsJoker)
+                    if (!drawnCard.IsJoker)
                     {
                         int a = (int)hand[0].Value;
                         int b = (int)hand[1].Value;
                         int min = Mathf.Min(a, b);
                         int max = Mathf.Max(a, b);
-                        int v = (int)card.Value;
+                        int v = (int)drawnCard.Value;
 
                         bool isInside = v > min && v < max;
 
                         correct =
-                            (choices.insideOutside == InsideOutsideChoice.Inside && isInside) ||
-                            (choices.insideOutside == InsideOutsideChoice.Outside && !isInside);
+                            (currentChoice.insideOutside == InsideOutsideChoice.Inside && isInside) ||
+                            (currentChoice.insideOutside == InsideOutsideChoice.Outside && !isInside);
                     }
                     break;
                 }
@@ -393,55 +555,19 @@ public class BusGamemanager : NetworkBehaviour
             case BusRound.SuitGuess:
                 {
                     bool handContainsSuit = hand.Any(
-                        card => card.Suit == (CardSuit)choices.suit
+                        card => card.Suit == (CardSuit)currentChoice.suit
                     );
 
                     correct =
-                        (choices.hasSuit == HasSuitChoice.Yes && handContainsSuit) ||
-                        (choices.hasSuit == HasSuitChoice.No && !handContainsSuit);
+                        (currentChoice.hasSuit == HasSuitChoice.Yes && handContainsSuit) ||
+                        (currentChoice.hasSuit == HasSuitChoice.No && !handContainsSuit);
                     break;
                 }
         }
 
-        PlayingCard newCard = deck[0];
-        deck.RemoveAt(0);
-        player.AddCard(newCard);
+        player.AddCard(drawnCard);
 
         return correct;
-    }
-
-    void ResolveCurrentRoundForAll()
-    {
-        currentPhase = BusRoundPhase.Revealing;
-        pendingPointRewards = 0;
-
-        foreach (var player in players)
-        {
-            bool correct = ResolveBusRound(player);
-
-            roundCorrect[player.OwnerClientId] = correct;
-
-            ShowRoundResultClientRpc(
-                player.OwnerClientId,
-                correct
-            );
-
-            if (correct)
-            {
-                pendingPointRewards++;
-                playersWhoMustGivePoint.Add(player.OwnerClientId);
-            }
-            else
-            {
-                player.AddPoints(1);
-                pointsReceivedThisRound[player.OwnerClientId]++;
-            }
-        }
-
-        if (pendingPointRewards > 0)
-            currentPhase = BusRoundPhase.GivingPoints;
-        else
-            ShowRoundSummary();
     }
 
     [ClientRpc]
@@ -457,21 +583,27 @@ public class BusGamemanager : NetworkBehaviour
 
     public void ShowPlayerSelectForPlayer()
     {
-        ShowPlayerSelectClientRpc();
+        ShowPlayerSelectClientRpc(players[currentPlayerIndex].OwnerClientId);
     }
 
     [ClientRpc]
-    void ShowPlayerSelectClientRpc()
+    void ShowPlayerSelectClientRpc(ulong targetClientId)
     {
+        Debug.Log($"ClientRPC received on {NetworkManager.Singleton.LocalClientId}, target = {targetClientId}");
+        if (NetworkManager.Singleton.LocalClientId != targetClientId)
+            return;
+
         ulong localId = NetworkManager.Singleton.LocalClientId;
 
-        List<Player> selectablePlayers = players
+        Player[] allPlayers = FindObjectsOfType<Player>();
+
+        List<Player> selectablePlayers = allPlayers
             .Where(p => p.OwnerClientId != localId)
             .ToList();
 
         BusUIManager.Instance.ShowPlayerSelection(
             selectablePlayers,
-            (selectedId) =>
+            selectedId =>
             {
                 SubmitPointTargetServerRpc(selectedId);
             });
@@ -501,48 +633,16 @@ public class BusGamemanager : NetworkBehaviour
         if (sender.OwnerClientId != rpcParams.Receive.SenderClientId || target == null)
             return;
 
-
         target.AddPoints(1);
-        pendingPointRewards--;
-
 
         ShowPointReceivedClientRpc(
-            sender.PlayerName.Value, 
+            sender.PlayerName.Value,
             target.points
         );
 
         pointsReceivedThisRound[targetClientId]++;
-        playersWhoMustGivePoint.Remove(senderId);
 
-        if (playersWhoMustGivePoint.Count == 0)
-        {
-            ShowRoundSummary();
-        }
-    }
-    void ShowRoundSummary()
-    {
-        currentPhase = BusRoundPhase.Summary;
-
-        foreach (var p in players)
-        {
-            ShowRoundSummaryClientRpc(
-                p.OwnerClientId,
-                pointsReceivedThisRound[p.OwnerClientId]
-            );
-        }
-
-        Invoke(nameof(AdvanceRound), 2.5f);
-    }
-
-    [ClientRpc]
-    void ShowRoundSummaryClientRpc(
-    ulong targetClientId,
-    int pointsThisRound)
-    {
-        if (NetworkManager.Singleton.LocalClientId != targetClientId)
-            return;
-
-        BusUIManager.Instance.ShowRoundSummary(pointsThisRound);
+        NextTurn();
     }
 
     List<PlayingCard> GenerateDeck()
