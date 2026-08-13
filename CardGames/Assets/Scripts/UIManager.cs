@@ -92,7 +92,7 @@ public class UIManager : MonoBehaviour
     public Transform pileParent;
     public GameObject cardBacksidePrefab;
 
-    private readonly List<GameObject> activePileCards = new();
+    private readonly List<GameObject> activePileCards = new List<GameObject>();
 
     [Header("Points UI")]
     public Text pointsText;
@@ -195,7 +195,7 @@ public class UIManager : MonoBehaviour
         if (selectedCards.Count == 0)
             return;
 
-        List<PlayingCard> playedCards = new();
+        List<PlayingCard> playedCards = new List<PlayingCard>();
 
         foreach (Card card in selectedCards)
         {
@@ -401,10 +401,10 @@ public class UIManager : MonoBehaviour
 
         descriptionText.text =
             $"Deck Contains:\n" +
-            $"• {kings}× King\n" +
-            $"• {queens}× Queen\n" +
-            $"• {aces}× Ace\n" +
-            $"• {jokers}× Joker";
+            $"ï¿½ {kings}ï¿½ King\n" +
+            $"ï¿½ {queens}ï¿½ Queen\n" +
+            $"ï¿½ {aces}ï¿½ Ace\n" +
+            $"ï¿½ {jokers}ï¿½ Joker";
 
         StartCoroutine(HidePopupAfterDelay(4f));
     }
@@ -719,6 +719,99 @@ public class UIManager : MonoBehaviour
         {
             cardsLeftImage.sprite = cardsLeftSprites[cardsLeft - 1];
         }
+    }
+
+    #endregion
+
+    #region Generic Popup Framework
+    /// <summary>
+    /// Generic helper to fade a CanvasGroup to a target alpha over a duration.
+    /// Can be used by any game's UI manager for animations.
+    /// </summary>
+    public IEnumerator FadeCanvasGroup(CanvasGroup canvasGroup, float targetAlpha, float duration)
+    {
+        if (canvasGroup == null) yield break;
+
+        float elapsedTime = 0f;
+        float startAlpha = canvasGroup.alpha;
+
+        while (elapsedTime < duration)
+        {
+            elapsedTime += Time.deltaTime;
+            float t = Mathf.Clamp01(elapsedTime / duration);
+            canvasGroup.alpha = Mathf.Lerp(startAlpha, targetAlpha, t);
+            yield return null;
+        }
+
+        canvasGroup.alpha = targetAlpha;
+    }
+
+    /// <summary>
+    /// Show a generic text popup with title and description, auto-hide after duration.
+    /// Reuses infoPopup infrastructure. Do not use if Bluff sequence is running.
+    /// Returns the coroutine for caller control.
+    /// </summary>
+    public Coroutine ShowGenericTextPopup(string title, string description, float duration)
+    {
+        if (isPopupLocked) return null;
+
+        infoPopup.SetActive(true);
+        titleText.text = title;
+        descriptionText.text = description;
+        ClearSpawnedCards();
+
+        return StartCoroutine(HidePopupAfterDelay(duration));
+    }
+
+    /// <summary>
+    /// Show a simple text notification at the center of screen, fade in/out.
+    /// Uses titleText as the notification display. Do not use if popup is locked.
+    /// </summary>
+    public Coroutine ShowNotification(string message, float duration)
+    {
+        if (isPopupLocked) return null;
+
+        return StartCoroutine(NotificationRoutine(message, duration));
+    }
+
+    private IEnumerator NotificationRoutine(string message, float duration)
+    {
+        infoPopup.SetActive(true);
+        titleText.text = message;
+        descriptionText.text = "";
+        ClearSpawnedCards();
+
+        yield return new WaitForSeconds(duration);
+
+        HidePopup();
+    }
+
+    /// <summary>
+    /// Display player avatar with optional text label for the given duration.
+    /// Useful for showing "Player X rolled" or similar.
+    /// </summary>
+    public Coroutine ShowAvatarNotification(Sprite avatar, string playerName, float duration)
+    {
+        if (avatar == null || isPopupLocked) return null;
+
+        return StartCoroutine(AvatarNotificationRoutine(avatar, playerName, duration));
+    }
+
+    private IEnumerator AvatarNotificationRoutine(Sprite avatar, string playerName, float duration)
+    {
+        infoPopup.SetActive(true);
+        titleText.text = playerName;
+        descriptionText.text = "";
+        ClearSpawnedCards();
+
+        // Display avatar in nextPlayerAvatarImage (reuse existing avatar display spot)
+        nextPlayerInfoPanel.SetActive(true);
+        nextPlayerAvatarImage.sprite = avatar;
+
+        yield return new WaitForSeconds(duration);
+
+        nextPlayerInfoPanel.SetActive(false);
+        HidePopup();
     }
 
     #endregion

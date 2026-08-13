@@ -4,6 +4,7 @@ using Unity.Collections;
 using Unity.Netcode;
 using UnityEngine;
 using UnityEngine.SceneManagement;
+using static UnityEngine.GraphicsBuffer;
 
 
 
@@ -71,7 +72,7 @@ public struct BusPlayerChoices
 }
 public class BusRow
 {
-    public List<PlayingCard> cards = new();
+    public List<PlayingCard> cards = new List<PlayingCard>();
     public int[] pointValues;
 }
 
@@ -79,14 +80,14 @@ public class BusGamemanager : NetworkBehaviour
 {
     public static BusGamemanager Instance;
 
-    public List<Player> players = new();
+    public List<Player> players = new List<Player>();
     private int currentPlayerIndex = 0;
 
     private BusRoundPhase currentPhase;
     private BusRound currentRound = BusRound.RedBlack;
     private BusPlayerChoices currentChoice;
 
-    private Dictionary<ulong, int> pointsReceivedThisRound = new();
+    private Dictionary<ulong, int> pointsReceivedThisRound = new Dictionary<ulong, int>();
 
     int[] busPointValues =
     {
@@ -95,7 +96,7 @@ public class BusGamemanager : NetworkBehaviour
     4,8,
     16
     };
-    private List<BusRow> busRows = new();
+    private List<BusRow> busRows = new List<BusRow>();
 
     private int currentRow = 0;
     private int currentCard = 0;
@@ -256,6 +257,8 @@ public class BusGamemanager : NetworkBehaviour
     {
         busActive = true;
 
+        List<PlayingCard> busCards = new List<PlayingCard>();
+
         busRows.Clear();
 
         int[][] values =
@@ -276,6 +279,8 @@ public class BusGamemanager : NetworkBehaviour
             {
                 row.cards.Add(deck[0]);
                 deck.RemoveAt(0);
+
+                busCards.Add(deck[0]);
             }
 
             busRows.Add(row);
@@ -310,7 +315,9 @@ public class BusGamemanager : NetworkBehaviour
 
         ShowCurrentTurnClientRpc(player.PlayerName.Value);
 
-        ShowBusPlayChoiceClientRpc(player.OwnerClientId);
+        ShowBusPlayChoiceClientRpc(
+            player.OwnerClientId,
+            currentBusCard);
     }
 
     void SkipBusTurn()
@@ -402,6 +409,52 @@ public class BusGamemanager : NetworkBehaviour
         currentChoice.hasSuit = choice;
         ResolveCurrentPlayerTurn(id);
     }
+    [ServerRpc(RequireOwnership = false)]
+    public void SubmitBusCardServerRpc(
+    PlayingCard playedCard,
+    ServerRpcParams rpcParams = default)
+    {
+        ulong senderId = rpcParams.Receive.SenderClientId;
+
+        if (players[currentPlayerIndex].OwnerClientId != senderId)
+            return;
+
+        Player player = players.FirstOrDefault(p => p.OwnerClientId == senderId);
+
+        if (player == null)
+            return;
+
+        // Make sure the player actually owns this card
+        if (!player.hand.Contains(playedCard))
+            return;
+
+        // Validate against the current revealed bus card
+        if (!CanPlay(playedCard, currentBusCard))
+            return;
+
+        Debug.Log($"{player.PlayerName.Value} played {playedCard}");
+
+        // Remove the played card
+        player.hand.Remove(playedCard);
+        //BusUIManager.ShowBusPlayChoice();
+
+        // TODO: Draw a replacement card if your rules require it.
+        // TODO: Advance the bus.
+        // TODO: Update all clients with the new hand.
+
+        NextBusPlayer();
+    }
+    [ServerRpc(RequireOwnership = false)]
+    public void SkipBusTurnServerRpc(
+    ServerRpcParams rpcParams = default)
+    {
+        ulong sender = rpcParams.Receive.SenderClientId;
+
+        if (players[currentPlayerIndex].OwnerClientId != sender)
+            return;
+
+        NextBusPlayer();
+    }
 
     [ClientRpc]
     void ShowBusCardClientRpc(PlayingCard card, int row, int index)
@@ -410,7 +463,9 @@ public class BusGamemanager : NetworkBehaviour
     }
 
     [ClientRpc]
-    void ShowBusPlayChoiceClientRpc(ulong targetClientId)
+    void ShowBusPlayChoiceClientRpc(
+    ulong targetClientId,
+    PlayingCard busCard)
     {
         if (NetworkManager.Singleton.LocalClientId != targetClientId)
             return;
@@ -420,7 +475,7 @@ public class BusGamemanager : NetworkBehaviour
 
         BusUIManager.Instance.ShowBusPlayChoice(
             me.hand,
-            currentBusCard);
+            busCard);
     }
 
     [ClientRpc]
@@ -490,6 +545,8 @@ public class BusGamemanager : NetworkBehaviour
             SubmitSuitChoiceServerRpc(choice);
         });
     }
+
+
 
     bool ResolveBusRound(Player player)
     {

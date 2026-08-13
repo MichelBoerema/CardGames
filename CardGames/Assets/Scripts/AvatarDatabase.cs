@@ -7,8 +7,8 @@ public class AvatarDatabase : NetworkBehaviour
     public static AvatarDatabase Instance { get; private set; }
 
     // Server-authoritative storage
-    private readonly Dictionary<int, byte[]> avatarData = new();
-    private readonly List<Sprite> avatars = new();
+    private readonly Dictionary<int, byte[]> avatarData = new Dictionary<int, byte[]>();
+    private readonly List<Sprite> avatars = new List<Sprite>();
 
     void Awake()
     {

@@ -20,12 +20,12 @@ public class BluffGamemanager : NetworkBehaviour
     public static BluffGamemanager Instance;
 
     // Players & deck
-    public List<Player> players = new();
+    public List<Player> players = new List<Player>();
     private List<PlayingCard> deck;
 
     // Game state
     public TableRank currentTableRank;
-    public List<PlayingCard> laatsteGespeeldeKaarten = new();
+    public List<PlayingCard> laatsteGespeeldeKaarten = new List<PlayingCard>();
     [SerializeField] private int currentPlayerIndex = 0;
     private int roundNumber = 0;
     private bool gameOver = false;
@@ -119,7 +119,7 @@ public class BluffGamemanager : NetworkBehaviour
     {
         if (!IsServer) return;
 
-        List<int> playersWithCards = new();
+        List<int> playersWithCards = new List<int>();
 
         for (int i = 0; i < players.Count; i++)
         {

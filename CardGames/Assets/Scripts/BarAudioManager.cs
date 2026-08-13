@@ -12,7 +12,7 @@ public class BarAudioManager : MonoBehaviour
 
     [Header("Music Playlist")]
     public AudioSource musicSource;
-    public List<AudioClip> musicClips = new();
+    public List<AudioClip> musicClips = new List<AudioClip>();
 
     [Header("Settings")]
     public bool shuffleMusic = false;

@@ -6,6 +6,7 @@ using UnityEngine.UI;
 [System.Serializable]
 public struct PlayingCard : INetworkSerializable
 {
+
     public PlayingDeckCardValue Value;
     public CardSuit Suit;
 
@@ -36,6 +37,31 @@ public struct PlayingCard : INetworkSerializable
         Suit == CardSuit.Clubs || Suit == CardSuit.Spades;
 
     public bool IsJoker => Value == PlayingDeckCardValue.Joker;
+
+    public override bool Equals(object obj)
+    {
+        if (!(obj is PlayingCard other))
+            return false;
+
+        return Value == other.Value &&
+               Suit == other.Suit;
+    }
+
+    public override int GetHashCode()
+    {
+        return ((int)Value * 397) ^ (int)Suit;
+    }
+
+    public static bool operator ==(PlayingCard a, PlayingCard b)
+    {
+        return a.Value == b.Value &&
+               a.Suit == b.Suit;
+    }
+
+    public static bool operator !=(PlayingCard a, PlayingCard b)
+    {
+        return !(a == b);
+    }
 }
 
 public enum PlayingDeckCardValue
@@ -106,7 +132,11 @@ public class Card : MonoBehaviour
     void ToggleSelected()
     {
         SetSelected(!IsSelected);
-        UIManager.Instance.OnCardSelectionChanged(this);
+        if(UIManager.Instance != null)
+            UIManager.Instance.OnCardSelectionChanged(this);
+
+        if (BusUIManager.Instance != null)
+            BusUIManager.Instance.OnCardClicked(this);
     }
 
     public void SetInteractable(bool interactable)

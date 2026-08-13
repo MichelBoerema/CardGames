@@ -8,7 +8,7 @@ using UnityEngine.UI;
 
 public class Player : NetworkBehaviour
 {
-    public List<PlayingCard> hand = new();
+    public List<PlayingCard> hand = new List<PlayingCard>();
 
 
     [Header("Punishment")]

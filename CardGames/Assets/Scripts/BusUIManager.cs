@@ -28,6 +28,12 @@ public class BusUIManager : MonoBehaviour
 
     private GameObject currentHandPrefab;
 
+    private readonly List<Card> busHandCards = new List<Card>();
+
+    private PlayingCard currentBusCard;
+
+    private Action<PlayingCard> onBusCardPlayed;
+
     [Header("Point Popup")]
     [SerializeField] private GameObject pointPopupPanel;
     [SerializeField] private Text pointPopupText;
@@ -69,8 +75,10 @@ public class BusUIManager : MonoBehaviour
     [SerializeField] private GameObject busCardPrefab;
 
     [SerializeField] private Button skipBusButton;
-    private readonly List<GameObject> busBacks = new();
-    private readonly List<Card> busCards = new();
+    [SerializeField] private Button playButton;
+    private readonly List<GameObject> busBacks = new List<GameObject>();
+    private readonly List<Card> busCards = new List<Card>();
+    private Card selectedCard;
 
     [SerializeField] private GameObject cardBackPrefab;
 
@@ -97,6 +105,23 @@ public class BusUIManager : MonoBehaviour
 
         Card ui = cardObj.GetComponent<Card>();
         ui.Setup(card);
+    }
+    public void OnCardClicked(Card card)
+    {
+        if (!busHandCards.Contains(card))
+            return;
+
+        if (!CanPlay(card.playingCard, currentBusCard))
+            return;
+
+        selectedCard = card;
+
+        BusGamemanager.Instance.SubmitBusCardServerRpc(card.playingCard);
+    }
+    bool CanPlay(PlayingCard handCard, PlayingCard busCard)
+    {
+        return handCard.Value == busCard.Value &&
+               handCard.Suit != busCard.Suit;
     }
     public void HideCurrentTurn()
     {
@@ -286,14 +311,34 @@ public class BusUIManager : MonoBehaviour
 
     public void CreateBus(List<BusRow> rows)
     {
+        Debug.Log($"CreateBus called. rows = {(rows == null ? "NULL" : rows.Count.ToString())}");
+
         busRoot.SetActive(true);
+        skipBusButton.gameObject.SetActive(true);
+        playButton.gameObject.SetActive(true);
+
+        skipBusButton.onClick.RemoveAllListeners();
+        skipBusButton.onClick.AddListener(() =>
+        {
+            BusGamemanager.Instance.SkipBusTurnServerRpc();
+        });
+
+        playButton.onClick.RemoveAllListeners();
+        playButton.onClick.AddListener(() =>
+        {
+            if (selectedCard == null)
+                return;
+
+            BusGamemanager.Instance.SubmitBusCardServerRpc(
+                selectedCard.playingCard);
+        });
 
         foreach (Transform row in busCardParent)
         {
             foreach (Transform child in row)
                 Destroy(child.gameObject);
         }
-
+        
         busCards.Clear();
 
         for (int rowIndex = 0; rowIndex < rows.Count; rowIndex++)
@@ -361,9 +406,30 @@ public class BusUIManager : MonoBehaviour
     }
 
     public void ShowBusPlayChoice(
-    List<PlayingCard> hand,
-    PlayingCard busCard)
+     List<PlayingCard> hand,
+     PlayingCard busCard)
     {
-        // TODO
+        currentBusCard = busCard;
+
+        handParent.gameObject.SetActive(false);
+        busHandParent.gameObject.SetActive(true);
+
+        foreach (Transform child in busHandParent)
+            Destroy(child.gameObject);
+
+        busHandCards.Clear();
+
+        foreach (PlayingCard card in hand)
+        {
+            GameObject obj = Instantiate(busHandCardPrefab, busHandParent);
+
+            Card ui = obj.GetComponent<Card>();
+            ui.Setup(card);
+
+            bool playable = CanPlay(card, busCard);
+            ui.SetInteractable(playable);
+
+            busHandCards.Add(ui);
+        }
     }
 }
