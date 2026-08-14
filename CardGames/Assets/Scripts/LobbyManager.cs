@@ -45,6 +45,7 @@ public class LobbyManager : MonoBehaviour
 
     public Button bluffButton;
     public Button busButton;
+    public Button mexicoButton;
     private NetworkVariable<FixedString32Bytes> selectedScene =
     new NetworkVariable<FixedString32Bytes>(
         "BluffGame",
@@ -97,6 +98,7 @@ public class LobbyManager : MonoBehaviour
 
         bluffButton.onClick.AddListener(() => SelectGamemode("BLUFF","BluffGame"));
         busButton.onClick.AddListener(() => SelectGamemode("BUSSEN", "BusGame"));
+        mexicoButton.onClick.AddListener(() => SelectGamemode("MEXICO", "Mexico"));
 
         gamemodePanel.SetActive(false);
         selectedGamemodeText.text = "CURRENT: BLUFF";

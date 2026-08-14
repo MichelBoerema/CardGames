@@ -26,6 +26,12 @@ public class MexicoGameManager : NetworkBehaviour
 {
     public static MexicoGameManager Instance;
 
+    public enum GamePhase
+    {
+        StartingRollOff,  // All players roll 1 die to determine leader
+        GameInProgress    // Normal turn-based game flow
+    }
+
     private const int MexicoRank = 1000; // 2-1 "Mexico", always the highest possible roll
     private const int DoubleRankBase = 900; // doubles rank 901 (double-1) .. 906 (double-6)
 
@@ -34,8 +40,11 @@ public class MexicoGameManager : NetworkBehaviour
     [Tooltip("Pause between reveals purely for pacing/UI, in seconds. Set to 0 to disable.")]
     public float revealDelay = 1.0f;
 
+    public GamePhase CurrentPhase { get; private set; } = GamePhase.StartingRollOff;
+
     private readonly List<Player> turnOrder = new List<Player>();
     private readonly Dictionary<Player, (int d1, int d2, int rank)> roundResults = new Dictionary<Player, (int d1, int d2, int rank)>();
+    private readonly Dictionary<Player, int> startingRollResults = new Dictionary<Player, int>(); // Single die rolls for roll-off
 
     private int leaderIndex;
     private int activeOffset;      // 0 = leader, 1 = next player, etc. (relative to leaderIndex)
@@ -44,6 +53,8 @@ public class MexicoGameManager : NetworkBehaviour
 
     // Expose turnOrder for UI and other systems
     public IReadOnlyList<Player> TurnOrder => turnOrder;
+    public Player CurrentActivePlayer => 
+        turnOrder.Count == 0 ? null : turnOrder[(leaderIndex + activeOffset) % turnOrder.Count];
 
     void Awake()
     {
@@ -51,73 +62,159 @@ public class MexicoGameManager : NetworkBehaviour
         else Destroy(gameObject);
     }
 
-    /// <summary>Server-only entry point. Call after GameManager.SetupGame(...) has run.</summary>
+    void Start()
+    {
+        // Server-side: set up the game when scene loads
+        if (!IsServer) return;
+
+        Debug.Log("[MexicoGameManager] Server start - initializing game");
+
+        GameManager gameManager = GameManager.Instance;
+        if (gameManager == null)
+        {
+            Debug.LogError("[MexicoGameManager] GameManager not found!");
+            return;
+        }
+
+        // Set up turn order and resources
+        List<Player> players = gameManager.SetupGame("Mexico");
+        if (players != null && players.Count > 0)
+        {
+            StartMexicoGame(players);
+        }
+    }
+
+    /// <summary>Server-only entry point after GameManager.SetupGame has completed.</summary>
     public void StartMexicoGame(List<Player> players)
     {
-        if (!IsServer) return;
+        if (!IsServer) 
+        {
+            Debug.LogWarning("MexicoGameManager.StartMexicoGame called on non-server!");
+            return;
+        }
         if (players == null || players.Count < 2)
         {
             Debug.LogError("MexicoGameManager: need at least 2 players to start.");
             return;
         }
 
+        Debug.Log($"[MexicoGameManager] Starting game with {players.Count} players");
+
         turnOrder.Clear();
         turnOrder.AddRange(players);
+        startingRollResults.Clear();
 
-        StartCoroutine(DetermineStartingLeaderRoutine());
+        CurrentPhase = GamePhase.StartingRollOff;
+
+        // Notify all players that starting roll-off phase is active
+        NotifyStartingRollPhaseClientRpc();
     }
 
-    // ---------- Opening roll-off: highest single die goes first ----------
-
-    private IEnumerator DetermineStartingLeaderRoutine()
+    /// <summary>Tell all clients to enable dice input for starting roll</summary>
+    [ClientRpc]
+    private void NotifyStartingRollPhaseClientRpc()
     {
-        List<Player> contenders = new List<Player>(turnOrder);
-
-        while (contenders.Count > 1)
+        Debug.Log("[MexicoGameManager ClientRpc] Starting roll-off phase received by client");
+        if (MexicoUIManager.Instance != null)
         {
-            var rolls = new Dictionary<Player, int>();
-            foreach (var p in contenders)
-                rolls[p] = UnityEngine.Random.Range(1, 7);
+            MexicoUIManager.Instance.SetGamePhase(GamePhase.StartingRollOff);
+            Debug.Log("[MexicoGameManager] SetGamePhase called on UI");
+        }
+        else
+        {
+            Debug.LogError("[MexicoGameManager] MexicoUIManager.Instance is NULL!");
+        }
+    }
 
-            int highest = 0;
-            foreach (var kv in rolls)
-                if (kv.Value > highest) highest = kv.Value;
+    /// <summary>Called by any player client during starting roll-off phase</summary>
+    [ServerRpc(RequireOwnership = false)]
+    public void RequestStartingRollServerRpc(ServerRpcParams rpcParams = default)
+    {
+        if (CurrentPhase != GamePhase.StartingRollOff) return;
 
-            // Flatten to parallel arrays - both FixedString32Bytes and int are
-            // unmanaged, so arrays of them serialize fine over a ClientRpc.
-            var names = new Unity.Collections.FixedString32Bytes[rolls.Count];
-            var values = new int[rolls.Count];
-            int i = 0;
-            foreach (var kv in rolls)
-            {
-                names[i] = kv.Key.PlayerName.Value;
-                values[i] = kv.Value;
-                i++;
-            }
+        Player requester = GetPlayerBySender(rpcParams.Receive.SenderClientId);
+        if (requester == null || startingRollResults.ContainsKey(requester))
+            return; // Already rolled
 
-            BroadcastStartingRollClientRpc(names, values);
+        int d1 = UnityEngine.Random.Range(1, 7);
+        startingRollResults[requester] = d1;
 
-            contenders = contenders.FindAll(p => rolls[p] == highest);
+        // Broadcast this roll to everyone
+        BroadcastStartingRollClientRpc(requester.PlayerName.Value, d1);
 
-            if (revealDelay > 0f)
-                yield return new WaitForSeconds(revealDelay);
+        // Check if all players have rolled
+        if (startingRollResults.Count >= turnOrder.Count)
+        {
+            StartCoroutine(DetermineLeaderFromStartingRolls());
+        }
+    }
+
+    [ClientRpc]
+    private void BroadcastStartingRollClientRpc(Unity.Collections.FixedString32Bytes playerName, int dieValue)
+    {
+        UIManager.Instance?.ShowNotification($"{playerName} rolled: {dieValue}", 1.5f);
+        // Let the UI show the final face for the local player
+        if (MexicoUIManager.Instance != null)
+            MexicoUIManager.Instance.OnStartingRoll(playerName, dieValue);
+    }
+
+    private IEnumerator DetermineLeaderFromStartingRolls()
+    {
+        if (revealDelay > 0f)
+            yield return new WaitForSeconds(revealDelay);
+
+        int highest = 0;
+        foreach (var kv in startingRollResults)
+            if (kv.Value > highest) highest = kv.Value;
+
+        List<Player> contenders = new List<Player>();
+        foreach (var kv in startingRollResults)
+        {
+            if (kv.Value == highest)
+                contenders.Add(kv.Key);
         }
 
-        Player starter = contenders[0];
-        leaderIndex = turnOrder.IndexOf(starter);
+        if (contenders.Count == 1)
+        {
+            // Clear winner
+            leaderIndex = turnOrder.IndexOf(contenders[0]);
+            TransitionToGamePhase();
+        }
+        else
+        {
+            // Tie: re-roll with tied players
+            startingRollResults.Clear();
+            var tiedNames = new Unity.Collections.FixedString32Bytes[contenders.Count];
+            for (int i = 0; i < contenders.Count; i++)
+                tiedNames[i] = contenders[i].PlayerName.Value;
 
+            NotifyRollOffTieClientRpc(tiedNames);
+            // Players will call RequestStartingRollServerRpc again
+        }
+    }
+
+    [ClientRpc]
+    private void NotifyRollOffTieClientRpc(Unity.Collections.FixedString32Bytes[] tiedPlayerNames)
+    {
+        string names = string.Join(", ", System.Array.ConvertAll(tiedPlayerNames, n => n.ToString()));
+        UIManager.Instance?.ShowNotification($"Tie! {names} re-roll", 2f);
+    }
+
+    private void TransitionToGamePhase()
+    {
+        CurrentPhase = GamePhase.GameInProgress;
+        NotifyGameStartClientRpc(leaderIndex);
         BeginRound();
     }
 
     [ClientRpc]
-    private void BroadcastStartingRollClientRpc(Unity.Collections.FixedString32Bytes[] names, int[] values)
+    private void NotifyGameStartClientRpc(int leaderIdx)
     {
-        // Wire this into your UIManager to show each player's opening roll
-        // Show the starting roll-off results via notification
-        for (int i = 0; i < names.Length && i < values.Length; i++)
+        if (MexicoUIManager.Instance != null)
         {
-            UIManager.Instance?.ShowNotification($"{names[i]}: {values[i]}", 1.5f);
+            MexicoUIManager.Instance.SetGamePhase(GamePhase.GameInProgress);
         }
+        Debug.Log($"Game started! Leader index: {leaderIdx}");
     }
 
     // ---------- Round flow ----------
@@ -141,8 +238,6 @@ public class MexicoGameManager : NetworkBehaviour
         NotifyActivePlayer();
     }
 
-    private Player CurrentActivePlayer => turnOrder[(leaderIndex + activeOffset) % turnOrder.Count];
-
     private void NotifyActivePlayer()
     {
         Player activePlayer = CurrentActivePlayer;
@@ -154,10 +249,12 @@ public class MexicoGameManager : NetworkBehaviour
             MexicoUIManager.Instance.UpdateCurrentPlayerIndicator(activePlayer);
     }
 
-    /// <summary>Called by the active player's client when they want to roll.</summary>
+    /// <summary>Called by the active player's client when they want to roll (2 dice).</summary>
     [ServerRpc(RequireOwnership = false)]
     public void RequestRollServerRpc(ServerRpcParams rpcParams = default)
     {
+        if (CurrentPhase != GamePhase.GameInProgress) return;
+
         Player requester = GetPlayerBySender(rpcParams.Receive.SenderClientId);
         if (requester == null || requester != CurrentActivePlayer) return;
 
@@ -166,6 +263,7 @@ public class MexicoGameManager : NetworkBehaviour
 
         if (rollsTakenThisTurn >= maxAllowed) return; // no rolls left this turn
 
+        // Roll 2 dice
         int d1 = UnityEngine.Random.Range(1, 7);
         int d2 = UnityEngine.Random.Range(1, 7);
         rollsTakenThisTurn++;

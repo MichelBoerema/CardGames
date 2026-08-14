@@ -37,7 +37,7 @@ public class GameManager : NetworkBehaviour
     [Header("Gamemode -> Resource mapping")]
     public List<GameModeConfig> gameModeConfigs = new List<GameModeConfig>()
     {
-        new GameModeConfig { sceneName = "MexicoGame", category = GameCategory.Dice,  resourceAmount = 2, includeJokers = false },
+        new GameModeConfig { sceneName = "MEXICO", category = GameCategory.Dice,  resourceAmount = 2, includeJokers = false },
         new GameModeConfig { sceneName = "BluffGame",  category = GameCategory.Cards, resourceAmount = 5, includeJokers = false },
         new GameModeConfig { sceneName = "BusGame",    category = GameCategory.Cards, resourceAmount = 0, includeJokers = false },
     };

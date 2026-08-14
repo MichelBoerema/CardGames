@@ -17,6 +17,9 @@ EditorBuildSettings:
   - enabled: 1
     path: Assets/Scenes/BusGame.unity
     guid: 5414c2a98c866154b917ed3a610f4a8e
+  - enabled: 1
+    path: Assets/Scenes/Mexico.unity
+    guid: 3bd2b06c82dad6340810760c4c8d57b8
   m_configObjects:
     com.unity.adaptiveperformance.google.android.provider_settings: {fileID: 11400000, guid: 94855a7a948525e47a5b1c9a18a9a2c0, type: 2}
     com.unity.adaptiveperformance.loader_settings: {fileID: 11400000, guid: bc13f09d4e9a30d4caf41e47a8d0ce40, type: 2}

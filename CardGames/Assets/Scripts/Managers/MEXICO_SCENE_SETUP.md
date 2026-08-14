@@ -88,28 +88,34 @@ Path: `Canvas/GameUIPanel/RoundResultsPanel`
 Path: `Canvas/GameUIPanel/DiceInputArea`
 
 1. Create Panel:
-   - Size: 200x300
+   - Size: 300x350
    - Anchored bottom-center, 50px from bottom
    - CanvasGroup component (very important!):
      - **Save reference for fade animations**
    - Background Image (optional visual indicator)
+   - **Attach DiceThrowInput script to this Panel**
 
-2. Create DiceVisual child (Image):
+2. Create OneDiceVisual child (Image):
    - Size: 150x150
    - Centered in panel
-   - Image: Any dice placeholder sprite (will animate on throw)
-   - **Attach DiceThrowInput script to this GameObject**
-   - Configure DiceThrowInput:
-     - minUpwardDistance: 80
-     - minUpwardSpeed: 300
-     - dragClamp: 250
-     - Dice Visual: (self reference, this GameObject's RectTransform)
+   - Image: Single die sprite
+   - **Visible only during starting roll-off phase**
 
-3. (Optional) Add hint text:
-   - Create Text child under DiceVisual
+3. Create TwoDiceVisual child (Container with 2 dice):
+   - Option A: Single Image showing 2 dice side-by-side (size 300x150)
+   - Option B: Two child Images (each 150x150, positioned side-by-side)
+   - **Visible only during game play phase**
+
+4. Configure DiceThrowInput (on DiceInputArea):
+   - minUpwardDistance: 80
+   - minUpwardSpeed: 300
+   - dragClamp: 250
+   - Dice Visual: (DiceInputArea's own RectTransform, so it encompasses both children)
+
+5. (Optional) Add hint text as child:
    - Content: "Swipe up to throw"
    - Font size 16
-   - Positioned below dice visual
+   - Positioned below dice area
 
 ### 1.7 Loser Display Panel (Hidden by Default)
 Path: `Canvas/GameUIPanel/LoserDisplayPanel`
@@ -196,8 +202,10 @@ MexicoUIManager Component:
 │   ├── loserNameText = Canvas/GameUIPanel/LoserDisplayPanel/LoserNameText
 │   └── loserStatusText = Canvas/GameUIPanel/LoserDisplayPanel/LoserStatusText
 ├── Dice Input
-│   ├── diceThrowInput = Canvas/GameUIPanel/DiceInputArea/DiceVisual (the Image with DiceThrowInput script)
-│   └── diceInputCanvasGroup = Canvas/GameUIPanel/DiceInputArea (the CanvasGroup)
+│   ├── diceThrowInput = Canvas/GameUIPanel/DiceInputArea (the Panel with DiceThrowInput script)
+│   ├── diceInputCanvasGroup = Canvas/GameUIPanel/DiceInputArea (the CanvasGroup)
+│   ├── oneDiceVisual = Canvas/GameUIPanel/DiceInputArea/OneDiceVisual
+│   └── twoDiceVisual = Canvas/GameUIPanel/DiceInputArea/TwoDiceVisual
 └── Popups
     ├── rollNotificationDuration = 2.0
     └── loserAnnouncementDuration = 3.0

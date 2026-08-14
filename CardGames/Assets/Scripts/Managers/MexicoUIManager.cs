@@ -38,16 +38,25 @@ public class MexicoUIManager : MonoBehaviour
     [Header("Dice Input")]
     public DiceThrowInput diceThrowInput;
     public CanvasGroup diceInputCanvasGroup; // For fade animations
+    [Tooltip("Single die visual for starting roll-off")]
+    public GameObject oneDiceVisual;
+    [Tooltip("Two dice visual for normal game play")]
+    public GameObject twoDiceVisual;
 
     [Header("Popups")]
     [Tooltip("Duration each roll notification appears")]
     public float rollNotificationDuration = 2f;
     [Tooltip("Duration loser announcement appears")]
     public float loserAnnouncementDuration = 3f;
+    [Header("Controls")]
+    public Button continueRollButton;
 
     private MexicoGameManager mexicoManager;
     private Player localPlayer;
     private bool isSpectating = false;
+    private MexicoGameManager.GamePhase currentPhase = MexicoGameManager.GamePhase.StartingRollOff;
+    private int localRollsTakenThisTurn = 0;
+    private int maxRollsPerTurnLocal = 3;
     private readonly List<GameObject> currentRoundRolls = new List<GameObject>();
     private readonly List<Player> knownPlayers = new List<Player>();
 
@@ -61,12 +70,16 @@ public class MexicoUIManager : MonoBehaviour
 
     void Start()
     {
+        Debug.Log("[MexicoUIManager] Start() called");
+        
         mexicoManager = MexicoGameManager.Instance;
         if (mexicoManager == null)
         {
             Debug.LogError("MexicoUIManager: MexicoGameManager not found!");
             return;
         }
+
+        Debug.Log($"[MexicoUIManager] MexicoGameManager found, Phase: {mexicoManager.CurrentPhase}");
 
         // Find local player
         Player[] allPlayers = FindObjectsByType<Player>(FindObjectsSortMode.None);
@@ -80,16 +93,19 @@ public class MexicoUIManager : MonoBehaviour
         }
 
         // Check if local player is in the game (spectator check)
-        if (localPlayer != null && mexicoManager.TurnOrder != null)
+        // NOTE: TurnOrder is populated by MexicoGameManager.StartMexicoGame(), which
+        // happens AFTER this Start(). For Phase 5 testing, start interactable.
+        // TODO: Wire this logic to fire after game actually starts.
+        if (false && localPlayer != null && mexicoManager.TurnOrder != null)
         {
             isSpectating = !mexicoManager.TurnOrder.Any(p => p == localPlayer);
         }
         else
         {
-            isSpectating = true;
+            isSpectating = false; // Start as non-spectating; will be updated when game begins
         }
 
-        // Disable dice throw if spectating
+        // Enable dice input for starting roll-off phase (all players can throw)
         if (diceThrowInput != null)
             diceThrowInput.SetInteractable(!isSpectating);
 
@@ -97,8 +113,21 @@ public class MexicoUIManager : MonoBehaviour
         mexicoManager.RoundLost += OnRoundLost;
 
         // Initialize UI
-        UpdateCurrentPlayerIndicator();
+        UpdateCurrentPlayerIndicator(); // null = "Waiting..."
         ClearRoundResultsPanel();
+        
+        // Wire dice throw event
+        WireDiceThrowEvent();
+
+        // Continue/stop rolling button
+        if (continueRollButton != null)
+        {
+            continueRollButton.onClick.AddListener(OnContinuePressed);
+            continueRollButton.gameObject.SetActive(false);
+        }
+
+        // Read max rolls from manager if available
+        if (mexicoManager != null) maxRollsPerTurnLocal = mexicoManager.maxRollsPerTurn;
     }
 
     void OnDestroy()
@@ -136,6 +165,46 @@ public class MexicoUIManager : MonoBehaviour
         {
             StartCoroutine(ScrollToBotom());
         }
+
+        // If this client is the player who rolled, show the final dice faces
+        if (localPlayer != null && playerName.ToString() == localPlayer.PlayerName.Value)
+        {
+            // Track local rolls taken this turn (client-side)
+            localRollsTakenThisTurn++;
+
+            if (currentPhase == MexicoGameManager.GamePhase.StartingRollOff)
+            {
+                // Shouldn't normally reach here for starting roll (different RPC),
+                // but handle defensively: show single die
+                if (diceThrowInput != null)
+                    diceThrowInput.SetDiceFace(d1);
+            }
+            else
+            {
+                if (diceThrowInput != null)
+                    diceThrowInput.SetDiceFaces(d1, d2);
+            }
+
+            // Show or hide the continue button: only if in game phase and local player has rolled at least once
+            if (currentPhase == MexicoGameManager.GamePhase.GameInProgress && continueRollButton != null)
+            {
+                bool canContinue = localRollsTakenThisTurn > 0 && localRollsTakenThisTurn < maxRollsPerTurnLocal;
+                continueRollButton.gameObject.SetActive(canContinue);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Called when a starting roll (single die) is broadcast from server.
+    /// Shows the final face on the local player's dice visual.
+    /// </summary>
+    public void OnStartingRoll(Unity.Collections.FixedString32Bytes playerName, int dieValue)
+    {
+        if (localPlayer == null) return;
+        if (playerName.ToString() != localPlayer.PlayerName.Value) return;
+
+        if (diceThrowInput != null)
+            diceThrowInput.SetDiceFace(dieValue);
     }
 
     private void SetupRollEntry(GameObject rollEntry, FixedString32Bytes playerName, int d1, int d2, bool isMexico)
@@ -210,18 +279,16 @@ public class MexicoUIManager : MonoBehaviour
 
     /// <summary>
     /// Update UI to show whose turn it is. Called when Player.SetTurnClientRpc fires.
-    /// This should be called from a hook to Player's turn changes.
     /// </summary>
     public void UpdateCurrentPlayerIndicator(Player currentPlayer = null)
     {
-        if (currentPlayer == null && localPlayer != null)
-        {
-            currentPlayer = localPlayer;
-        }
-
         if (currentPlayer == null)
         {
             if (currentPlayerText != null) currentPlayerText.text = "Waiting...";
+            if (currentPlayerAvatarImage != null) currentPlayerAvatarImage.sprite = null;
+            // Not anyone's turn locally - hide continue button
+            if (continueRollButton != null)
+                continueRollButton.gameObject.SetActive(false);
             return;
         }
 
@@ -236,6 +303,25 @@ public class MexicoUIManager : MonoBehaviour
             Sprite avatarSprite = AvatarDatabase.Instance?.GetAvatar(currentPlayer.AvatarId.Value);
             if (avatarSprite != null)
                 currentPlayerAvatarImage.sprite = avatarSprite;
+        }
+
+        // Reset local roll counter at start of new turn for local player
+        if (isMyTurn)
+        {
+            localRollsTakenThisTurn = 0;
+            // enable dice input for local player
+            if (diceThrowInput != null)
+                diceThrowInput.SetInteractable(true);
+            if (continueRollButton != null)
+                continueRollButton.gameObject.SetActive(false);
+        }
+        else
+        {
+            // not local player's turn
+            if (diceThrowInput != null)
+                diceThrowInput.SetInteractable(false);
+            if (continueRollButton != null)
+                continueRollButton.gameObject.SetActive(false);
         }
     }
 
@@ -289,12 +375,21 @@ public class MexicoUIManager : MonoBehaviour
         loserDisplayPanel.SetActive(true);
         canvasGroup.alpha = 0f;
 
-        // Fade in
-        yield return StartCoroutine(UIManager.Instance.FadeCanvasGroup(canvasGroup, 1f, 0.5f));
-        yield return new WaitForSeconds(loserAnnouncementDuration - 1f);
-
-        // Fade out
-        yield return StartCoroutine(UIManager.Instance.FadeCanvasGroup(canvasGroup, 0f, 0.5f));
+        // Fade in (if UIManager is available)
+        if (UIManager.Instance != null)
+        {
+            yield return StartCoroutine(UIManager.Instance.FadeCanvasGroup(canvasGroup, 1f, 0.5f));
+            yield return new WaitForSeconds(loserAnnouncementDuration - 1f);
+            // Fade out
+            yield return StartCoroutine(UIManager.Instance.FadeCanvasGroup(canvasGroup, 0f, 0.5f));
+        }
+        else
+        {
+            // Fallback: no UIManager, just show for duration then hide
+            Debug.LogWarning("[MexicoUIManager] UIManager not found, showing loser panel without fade");
+            canvasGroup.alpha = 1f;
+            yield return new WaitForSeconds(loserAnnouncementDuration);
+        }
 
         loserDisplayPanel.SetActive(false);
     }
@@ -309,17 +404,68 @@ public class MexicoUIManager : MonoBehaviour
     }
 
     /// <summary>
+    /// Called by MexicoGameManager to notify UI of game phase change.
+    /// </summary>
+    public void SetGamePhase(MexicoGameManager.GamePhase phase)
+    {
+        Debug.Log($"[MexicoUIManager] SetGamePhase called: {phase}");
+        currentPhase = phase;
+
+        if (phase == MexicoGameManager.GamePhase.StartingRollOff)
+        {
+            // Show 1 die for roll-off
+            if (oneDiceVisual != null) oneDiceVisual.SetActive(true);
+            if (twoDiceVisual != null) twoDiceVisual.SetActive(false);
+            
+            if (diceThrowInput != null)
+            {
+                diceThrowInput.SetDiceCount(1);
+                diceThrowInput.SetInteractable(true);
+                Debug.Log("[MexicoUIManager] Dice input enabled for starting roll (1 die)");
+            }
+            if (currentPlayerText != null)
+                currentPlayerText.text = "Roll to determine leader";
+        }
+        else if (phase == MexicoGameManager.GamePhase.GameInProgress)
+        {
+            // Show 2 dice for normal game
+            if (oneDiceVisual != null) oneDiceVisual.SetActive(false);
+            if (twoDiceVisual != null) twoDiceVisual.SetActive(true);
+            
+            if (diceThrowInput != null)
+            {
+                diceThrowInput.SetDiceCount(2);
+                Debug.Log("[MexicoUIManager] Game in progress phase (2 dice)");
+            }
+        }
+    }
+
+    /// <summary>
     /// Called by the DiceThrowInput when a throw gesture is detected.
-    /// This should be wired in Start() via diceThrowInput.OnThrow += OnDiceThrown.
+    /// Routes to correct ServerRpc based on game phase.
     /// </summary>
     private void OnDiceThrown()
     {
         if (isSpectating) return;
         if (mexicoManager == null) return;
-        if (!localPlayer.IsMyTurn) return; // Safety check
 
-        // Request roll from the server
-        mexicoManager.RequestRollServerRpc();
+        if (currentPhase == MexicoGameManager.GamePhase.StartingRollOff)
+        {
+            // Starting roll-off: all players throw 1 die
+            Debug.Log($"[MexicoUIManager] Throwing for starting roll-off");
+            mexicoManager.RequestStartingRollServerRpc();
+        }
+        else if (currentPhase == MexicoGameManager.GamePhase.GameInProgress)
+        {
+            // Normal game: only active player throws 2 dice
+            if (!localPlayer.IsMyTurn) 
+            {
+                Debug.Log($"[MexicoUIManager] Not your turn, ignoring throw");
+                return;
+            }
+            Debug.Log($"[MexicoUIManager] Throwing 2 dice");
+            mexicoManager.RequestRollServerRpc();
+        }
     }
 
     /// <summary>
@@ -332,6 +478,20 @@ public class MexicoUIManager : MonoBehaviour
         {
             diceThrowInput.OnThrow += OnDiceThrown;
         }
+    }
+
+    private void OnContinuePressed()
+    {
+        if (mexicoManager == null) return;
+        Debug.Log("[MexicoUIManager] Continue pressed - stopping rolling for this player");
+        // Call server RPC to stop rolling (server will validate requester is active player)
+        mexicoManager.StopRollingServerRpc();
+
+        // Disable continue locally until server responds
+        if (continueRollButton != null)
+            continueRollButton.gameObject.SetActive(false);
+        if (diceThrowInput != null)
+            diceThrowInput.SetInteractable(false);
     }
 
     /// <summary>
