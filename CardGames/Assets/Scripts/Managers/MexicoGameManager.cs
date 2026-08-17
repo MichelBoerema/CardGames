@@ -45,6 +45,7 @@ public class MexicoGameManager : NetworkBehaviour
     private readonly List<Player> turnOrder = new List<Player>();
     private readonly Dictionary<Player, (int d1, int d2, int rank)> roundResults = new Dictionary<Player, (int d1, int d2, int rank)>();
     private readonly Dictionary<Player, int> startingRollResults = new Dictionary<Player, int>(); // Single die rolls for roll-off
+    private readonly HashSet<ulong> playersReadyForGameStart = new HashSet<ulong>();
 
     private int leaderIndex;
     private int activeOffset;      // 0 = leader, 1 = next player, etc. (relative to leaderIndex)
@@ -176,9 +177,21 @@ public class MexicoGameManager : NetworkBehaviour
 
         if (contenders.Count == 1)
         {
+            playersReadyForGameStart.Clear();
+            var names = new Unity.Collections.FixedString32Bytes[startingRollResults.Count];
+            var values = new int[startingRollResults.Count];
+            int idx = 0;
+            foreach (var kv in startingRollResults)
+            {
+                names[idx] = kv.Key.PlayerName.Value;
+                values[idx] = kv.Value;
+                idx++;
+            }
+
+            NotifyStartingRollSummaryClientRpc(names, values);
+
             // Clear winner
             leaderIndex = turnOrder.IndexOf(contenders[0]);
-            TransitionToGamePhase();
         }
         else
         {
@@ -198,6 +211,39 @@ public class MexicoGameManager : NetworkBehaviour
     {
         string names = string.Join(", ", System.Array.ConvertAll(tiedPlayerNames, n => n.ToString()));
         UIManager.Instance?.ShowNotification($"Tie! {names} re-roll", 2f);
+    }
+
+    [ClientRpc]
+    private void NotifyStartingRollSummaryClientRpc(Unity.Collections.FixedString32Bytes[] playerNames, int[] dieValues)
+    {
+        if (MexicoUIManager.Instance != null)
+            MexicoUIManager.Instance.ShowStartingRollSummary(playerNames, dieValues);
+    }
+
+    [ClientRpc]
+    private void UpdateReadyStateClientRpc(Unity.Collections.FixedString32Bytes playerName, bool isReady)
+    {
+        if (MexicoUIManager.Instance != null)
+            MexicoUIManager.Instance.UpdateStartingRollReadyState(playerName, isReady);
+    }
+
+    [ServerRpc(RequireOwnership = false)]
+    public void MarkPlayerReadyServerRpc(ServerRpcParams rpcParams = default)
+    {
+        if (CurrentPhase != GamePhase.StartingRollOff)
+            return;
+
+        Player requester = GetPlayerBySender(rpcParams.Receive.SenderClientId);
+        if (requester == null)
+            return;
+
+        bool wasReady = !playersReadyForGameStart.Add(requester.OwnerClientId);
+        UpdateReadyStateClientRpc(requester.PlayerName.Value, !wasReady);
+
+        if (!wasReady && playersReadyForGameStart.Count >= turnOrder.Count)
+        {
+            TransitionToGamePhase();
+        }
     }
 
     private void TransitionToGamePhase()
@@ -244,9 +290,34 @@ public class MexicoGameManager : NetworkBehaviour
         foreach (var p in turnOrder)
             p.SetTurnClientRpc(p == activePlayer);
 
-        // Update UI to show current player
+        int allowedRolls = activeOffset == 0 ? maxRollsPerTurn : rollsAllowedThisRound;
+        NotifyActivePlayerClientRpc(activePlayer != null ? activePlayer.OwnerClientId : 0, allowedRolls);
+
+        // Update UI to show current player on server instance too
         if (MexicoUIManager.Instance != null)
             MexicoUIManager.Instance.UpdateCurrentPlayerIndicator(activePlayer);
+        if (MexicoUIManager.Instance != null)
+            MexicoUIManager.Instance.UpdateRollsAllowed(allowedRolls, false);
+    }
+
+    [ClientRpc]
+    private void NotifyActivePlayerClientRpc(ulong activePlayerClientId, int allowedRolls)
+    {
+        Player activePlayer = null;
+        foreach (var p in FindObjectsByType<Player>(FindObjectsSortMode.None))
+        {
+            if (p.OwnerClientId == activePlayerClientId)
+            {
+                activePlayer = p;
+                break;
+            }
+        }
+
+        if (MexicoUIManager.Instance != null)
+        {
+            MexicoUIManager.Instance.UpdateCurrentPlayerIndicator(activePlayer);
+            MexicoUIManager.Instance.UpdateRollsAllowed(allowedRolls, false);
+        }
     }
 
     /// <summary>Called by the active player's client when they want to roll (2 dice).</summary>
@@ -304,9 +375,17 @@ public class MexicoGameManager : NetworkBehaviour
             // Leader chose to stop: the number of rolls they took becomes the
             // cap for everyone else this round.
             rollsAllowedThisRound = rollsTakenThisTurn;
+            NotifyRollLimitClientRpc(rollsAllowedThisRound);
         }
 
         AdvanceToNextPlayer();
+    }
+
+    [ClientRpc]
+    private void NotifyRollLimitClientRpc(int rollsAllowed)
+    {
+        if (MexicoUIManager.Instance != null)
+            MexicoUIManager.Instance.UpdateRollsAllowed(rollsAllowed, false);
     }
 
     private void AdvanceAfterLeaderMexico()
@@ -367,6 +446,7 @@ public class MexicoGameManager : NetworkBehaviour
         AnnounceRoundResultClientRpc(loser.PlayerName.Value, d1, d2);
 
         RoundLost?.Invoke(loser);
+        NotifyRoundLostClientRpc(loser.PlayerName.Value);
 
         // Loser leads the next round, regardless of who rolled last.
         leaderIndex = turnOrder.IndexOf(loser);
@@ -422,5 +502,12 @@ public class MexicoGameManager : NetworkBehaviour
         // Announce round result to UI manager
         // MexicoUIManager will show loser popup via OnRoundLost event hook
         Debug.Log($"{loserName} lost with roll {d1}-{d2}");
+    }
+
+    [ClientRpc]
+    private void NotifyRoundLostClientRpc(Unity.Collections.FixedString32Bytes loserName)
+    {
+        if (MexicoUIManager.Instance != null)
+            MexicoUIManager.Instance.ShowLoserAnnouncementForName(loserName);
     }
 }

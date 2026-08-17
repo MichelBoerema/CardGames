@@ -85,10 +85,24 @@ public class DiceThrowInput : MonoBehaviour, IBeginDragHandler, IDragHandler, IE
             dieImage2.sprite = dieFaceSprites[b];
     }
 
+    /// <summary>Show a random preview face immediately when dice are enabled.</summary>
+    public void SetRandomDiceFaces()
+    {
+        if (diceCount == 1)
+        {
+            SetDiceFace(UnityEngine.Random.Range(1, 7));
+            return;
+        }
+
+        SetDiceFaces(UnityEngine.Random.Range(1, 7), UnityEngine.Random.Range(1, 7));
+    }
+
     /// <summary>Set how many dice to throw (1 or 2)</summary>
     public void SetDiceCount(int count)
     {
         diceCount = Mathf.Max(1, count);
+        if (dieImage1 != null)
+            SetRandomDiceFaces();
     }
 
     public void OnBeginDrag(PointerEventData eventData)
