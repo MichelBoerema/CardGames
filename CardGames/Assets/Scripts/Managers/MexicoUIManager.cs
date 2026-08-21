@@ -27,6 +27,8 @@ public class MexicoUIManager : MonoBehaviour
     public GameObject roundResultsPanel;
     public Transform roundResultsContent; // Parent for roll entries
     public GameObject rollEntryPrefab;    // Prefab: avatar, name, dice, rank, label
+    [Tooltip("Optional two-dice prefab used for normal round results. Falls back to rollEntryPrefab.")]
+    public GameObject roundRollEntryPrefab;
     [Tooltip("Max height before scroll. 0 = no limit")]
     public float maxPanelHeight = 400f;
 
@@ -65,7 +67,9 @@ public class MexicoUIManager : MonoBehaviour
     private int localRollsTakenThisTurn = 0;
     private int maxRollsPerTurnLocal = 3;
     private int currentRollsAllowedThisTurn = 0;
+    private bool activeTurnIsLeader;
     private readonly List<GameObject> currentRoundRolls = new List<GameObject>();
+    private readonly Dictionary<string, GameObject> currentRoundRollEntries = new Dictionary<string, GameObject>();
     private readonly List<GameObject> currentStartingRollSummaryEntries = new List<GameObject>();
     private readonly List<Player> knownPlayers = new List<Player>();
 
@@ -100,6 +104,9 @@ public class MexicoUIManager : MonoBehaviour
                 break;
             }
         }
+
+        UpdateLocalPlayerAvatar();
+        StartCoroutine(RefreshLocalPlayerAvatarWhenReady());
 
         // Check if local player is in the game (spectator check)
         // NOTE: TurnOrder is populated by MexicoGameManager.StartMexicoGame(), which
@@ -162,13 +169,18 @@ public class MexicoUIManager : MonoBehaviour
     /// </summary>
     public void OnPlayerRolled(FixedString32Bytes playerName, int d1, int d2, bool isMexico, bool wasFinalRoll)
     {
-        // Add entry to round results panel
-        if (rollEntryPrefab != null && roundResultsContent != null)
+        // Create one entry per player, then refresh it on later rolls.
+        GameObject roundEntryPrefab = roundRollEntryPrefab != null ? roundRollEntryPrefab : rollEntryPrefab;
+        if (roundEntryPrefab != null && roundResultsContent != null)
         {
-            GameObject rollEntry = Instantiate(rollEntryPrefab, roundResultsContent);
-            currentRoundRolls.Add(rollEntry);
+            string playerKey = playerName.ToString();
+            if (!currentRoundRollEntries.TryGetValue(playerKey, out GameObject rollEntry) || rollEntry == null)
+            {
+                rollEntry = Instantiate(roundEntryPrefab, roundResultsContent);
+                currentRoundRollEntries[playerKey] = rollEntry;
+                currentRoundRolls.Add(rollEntry);
+            }
 
-            // Populate roll entry UI
             SetupRollEntry(rollEntry, playerName, d1, d2, isMexico);
         }
 
@@ -212,7 +224,7 @@ public class MexicoUIManager : MonoBehaviour
                     diceThrowInput.SetDiceFaces(d1, d2);
 
                 // Only the active player sees a live count of how many rolls they have already used.
-                if (localPlayer == mexicoManager.CurrentActivePlayer)
+                if (localPlayer == mexicoManager.CurrentActivePlayer && activeTurnIsLeader)
                     UpdateRollsAllowed(localRollsTakenThisTurn, true);
             }
 
@@ -298,8 +310,13 @@ public class MexicoUIManager : MonoBehaviour
         Text nameText = rollEntry.transform.Find("PlayerName")?.GetComponent<Text>();
         if (nameText != null) nameText.text = playerName.ToString();
 
-        Text diceText = rollEntry.transform.Find("DiceDisplay")?.GetComponent<Text>();
-        if (diceText != null) diceText.text = $"{d1}-{d2}";
+        Image[] diceImages = FindRoundDiceImages(rollEntry);
+        Sprite firstDieSprite = GetDieSprite(d1);
+        Sprite secondDieSprite = GetDieSprite(d2);
+        if (diceImages.Length > 0 && firstDieSprite != null)
+            diceImages[0].sprite = firstDieSprite;
+        if (diceImages.Length > 1 && secondDieSprite != null)
+            diceImages[1].sprite = secondDieSprite;
 
         int rank = MexicoGameManager.ComputeRank(d1, d2);
         Text rankText = rollEntry.transform.Find("Rank")?.GetComponent<Text>();
@@ -318,6 +335,29 @@ public class MexicoUIManager : MonoBehaviour
                     avatarImage.sprite = avatarSprite;
             }
         }
+    }
+
+    private Image[] FindRoundDiceImages(GameObject rollEntry)
+    {
+        Image firstDie = rollEntry.transform.Find("DiceDisplay1")?.GetComponent<Image>();
+        Image secondDie = rollEntry.transform.Find("DiceDisplay2")?.GetComponent<Image>();
+
+        if (firstDie == null)
+            firstDie = rollEntry.transform.Find("DiceDisplayA")?.GetComponent<Image>();
+        if (secondDie == null)
+            secondDie = rollEntry.transform.Find("DiceDisplayB")?.GetComponent<Image>();
+
+        if (firstDie != null && secondDie != null)
+            return new[] { firstDie, secondDie };
+
+        List<Image> namedImages = new List<Image>();
+        foreach (Image image in rollEntry.GetComponentsInChildren<Image>(true))
+        {
+            if (image.gameObject.name.Contains("DiceDisplay"))
+                namedImages.Add(image);
+        }
+
+        return namedImages.ToArray();
     }
 
     private string GetRankLabel(int rank)
@@ -360,6 +400,7 @@ public class MexicoUIManager : MonoBehaviour
         foreach (var roll in currentRoundRolls)
             Destroy(roll);
         currentRoundRolls.Clear();
+        currentRoundRollEntries.Clear();
     }
 
     private IEnumerator ScrollToBotom()
@@ -380,9 +421,13 @@ public class MexicoUIManager : MonoBehaviour
         {
             if (currentPlayerText != null)
                 currentPlayerText.text = currentPhase == MexicoGameManager.GamePhase.StartingRollOff ? "ROLL TO DETERMINE STARTER" : "Waiting...";
-            if (currentPlayerAvatarImage != null) currentPlayerAvatarImage.sprite = null;
+            if (currentPhase == MexicoGameManager.GamePhase.StartingRollOff)
+                UpdateLocalPlayerAvatar();
+            else if (currentPlayerAvatarImage != null)
+                currentPlayerAvatarImage.sprite = null;
             if (rollsAllowedText != null)
                 rollsAllowedText.gameObject.SetActive(false);
+            activeTurnIsLeader = false;
             // Not anyone's turn locally - hide continue button
             if (continueRollButton != null)
                 continueRollButton.gameObject.SetActive(false);
@@ -441,6 +486,31 @@ public class MexicoUIManager : MonoBehaviour
         {
             leaderIndicatorText.text = $"Dealer: {leader.PlayerName.Value}";
         }
+    }
+
+    public void SetActiveTurn(Player currentPlayer, bool isLeader, int rollsAllowed)
+    {
+        activeTurnIsLeader = isLeader;
+        UpdateCurrentPlayerIndicator(currentPlayer);
+        UpdateRollsAllowed(rollsAllowed, false);
+    }
+
+    private void UpdateLocalPlayerAvatar()
+    {
+        if (currentPlayerAvatarImage == null || localPlayer == null)
+            return;
+
+        Sprite avatarSprite = AvatarDatabase.Instance?.GetAvatar(localPlayer.AvatarId.Value);
+        if (avatarSprite != null)
+            currentPlayerAvatarImage.sprite = avatarSprite;
+    }
+
+    private IEnumerator RefreshLocalPlayerAvatarWhenReady()
+    {
+        while (AvatarDatabase.Instance == null || !AvatarDatabase.Instance.IsSpawned)
+            yield return null;
+
+        UpdateLocalPlayerAvatar();
     }
 
     public void UpdateRollsAllowed(int rollsAllowed, bool forceShow = true)
@@ -674,6 +744,7 @@ public class MexicoUIManager : MonoBehaviour
                 diceThrowInput.SetInteractable(true);
                 Debug.Log("[MexicoUIManager] Dice input enabled for starting roll (1 die)");
             }
+            UpdateLocalPlayerAvatar();
             if (currentPlayerText != null)
                 currentPlayerText.text = "ROLL TO DETERMINE STARTER";
         }

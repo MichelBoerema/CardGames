@@ -242,8 +242,16 @@ public class MexicoGameManager : NetworkBehaviour
 
         if (!wasReady && playersReadyForGameStart.Count >= turnOrder.Count)
         {
-            TransitionToGamePhase();
+            StartCoroutine(BeginGameAfterReadyDelay());
         }
+    }
+
+    private IEnumerator BeginGameAfterReadyDelay()
+    {
+        yield return new WaitForSeconds(3f);
+
+        if (CurrentPhase == GamePhase.StartingRollOff && playersReadyForGameStart.Count >= turnOrder.Count)
+            TransitionToGamePhase();
     }
 
     private void TransitionToGamePhase()
@@ -291,17 +299,18 @@ public class MexicoGameManager : NetworkBehaviour
             p.SetTurnClientRpc(p == activePlayer);
 
         int allowedRolls = activeOffset == 0 ? maxRollsPerTurn : rollsAllowedThisRound;
-        NotifyActivePlayerClientRpc(activePlayer != null ? activePlayer.OwnerClientId : 0, allowedRolls);
+        bool isLeader = activeOffset == 0;
+        NotifyActivePlayerClientRpc(activePlayer != null ? activePlayer.OwnerClientId : 0, allowedRolls, isLeader);
 
         // Update UI to show current player on server instance too
         if (MexicoUIManager.Instance != null)
             MexicoUIManager.Instance.UpdateCurrentPlayerIndicator(activePlayer);
         if (MexicoUIManager.Instance != null)
-            MexicoUIManager.Instance.UpdateRollsAllowed(allowedRolls, false);
+            MexicoUIManager.Instance.SetActiveTurn(activePlayer, isLeader, allowedRolls);
     }
 
     [ClientRpc]
-    private void NotifyActivePlayerClientRpc(ulong activePlayerClientId, int allowedRolls)
+    private void NotifyActivePlayerClientRpc(ulong activePlayerClientId, int allowedRolls, bool isLeader)
     {
         Player activePlayer = null;
         foreach (var p in FindObjectsByType<Player>(FindObjectsSortMode.None))
@@ -314,10 +323,7 @@ public class MexicoGameManager : NetworkBehaviour
         }
 
         if (MexicoUIManager.Instance != null)
-        {
-            MexicoUIManager.Instance.UpdateCurrentPlayerIndicator(activePlayer);
-            MexicoUIManager.Instance.UpdateRollsAllowed(allowedRolls, false);
-        }
+            MexicoUIManager.Instance.SetActiveTurn(activePlayer, isLeader, allowedRolls);
     }
 
     /// <summary>Called by the active player's client when they want to roll (2 dice).</summary>
